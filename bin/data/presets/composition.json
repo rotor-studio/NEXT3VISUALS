@@ -1,0 +1,41 @@
+{
+    "foam": [],
+    "foamEnabled": true,
+    "ndi": {
+        "enabled": true,
+        "fade": 1.0,
+        "position": {
+            "x": 0.0,
+            "y": 649.411865234375
+        },
+        "sender": "MACBOOK-PRO-DE-XD.LOCAL (NEXT2 Translations NDI)",
+        "senderIndex": 5
+    },
+    "output": {
+        "height": 3840,
+        "width": 1080
+    },
+    "particles": [
+        {
+            "bounce": 0.16249999403953552,
+            "emitter": {
+                "h": 60.0,
+                "w": 540.0,
+                "x": 243.781494140625,
+                "y": 540.5042114257813
+            },
+            "enabled": true,
+            "fade": 1.0,
+            "lifeSpanMax": 8.0,
+            "lifeSpanMin": 2.0,
+            "maxParticles": 1462.941162109375,
+            "noise": 0.0,
+            "noiseStart": 0.6838235259056091,
+            "size": 2.213235378265381,
+            "speed": 52.27941131591797,
+            "trail": 1.5661765336990356
+        }
+    ],
+    "particlesEnabled": true,
+    "version": 1
+}

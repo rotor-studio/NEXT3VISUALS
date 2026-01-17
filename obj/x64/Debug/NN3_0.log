@@ -1,0 +1,12 @@
+﻿  Examinando orígenes para las dependencias de módulo...
+  main.cpp
+  ofApp.cpp
+C:\of_v0.12.1_vs_64_release\apps\NN3\NN3_0\src\ofApp.cpp(1061,38): warning C4267: 'inicializando': conversión de 'size_t' a 'int'; posible pérdida de datos
+C:\of_v0.12.1_vs_64_release\apps\NN3\NN3_0\src\ofApp.cpp(1061,18): warning C4267: 'inicializando': conversión de 'size_t' a 'const int'; posible pérdida de datos
+C:\of_v0.12.1_vs_64_release\apps\NN3\NN3_0\src\ofApp.cpp(1062,39): warning C4267: 'inicializando': conversión de 'size_t' a 'int'; posible pérdida de datos
+C:\of_v0.12.1_vs_64_release\apps\NN3\NN3_0\src\ofApp.cpp(1062,18): warning C4267: 'inicializando': conversión de 'size_t' a 'const int'; posible pérdida de datos
+LINK : warning LNK4075: se omite '/INCREMENTAL' debido a la especificación '/FORCE'
+     Creando biblioteca bin\NN3_0_debug.lib y objeto bin\NN3_0_debug.exp
+  NN3_0.vcxproj -> C:\of_v0.12.1_vs_64_release\apps\NN3\NN3_0\bin\NN3_0_debug.exe
+  C:\of_v0.12.1_vs_64_release\apps\NN3\NN3_0\dll\x64\Processing.NDI.Lib.x64.dll
+  1 archivo(s) copiado(s)

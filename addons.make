@@ -1,0 +1,4 @@
+ofxGui
+ofxNDI
+ofxOsc
+ofxXmlSettings
