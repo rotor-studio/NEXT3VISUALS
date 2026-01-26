@@ -47,6 +47,9 @@ private:
 	void drawSliderLabel(const std::string &label, const ofRectangle &rect) const;
 	void saveComposition();
 	void loadComposition();
+	void saveComposition(const std::string &path);
+	void loadComposition(const std::string &path);
+	std::string getPresetPath(int index) const;
 	bool hitTestFoamLayer(const ofVec2f &outputPos, int &hitIndex) const;
 	ofVec2f windowToOutput(const ofVec2f &windowPos) const;
 	ofRectangle outputToWindowRect(const ofRectangle &outputRect) const;
@@ -117,6 +120,8 @@ private:
 	ofRectangle mistSpeedRect;
 	ofRectangle resetRect;
 	ofRectangle ndiTestRect;
+	std::array<ofRectangle, 5> presetRects;
+	int currentPresetIndex = 0;
 	bool draggingFade = false;
 	bool draggingMistSpeed = false;
 	bool resetArmed = false;

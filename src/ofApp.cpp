@@ -65,10 +65,21 @@ void ofApp::update(){
 		const bool needsMask = particleGroupEnabled && !particleSystems.empty();
 		if (ndiEnabled && ndiReceiver.ReceiverConnected() && ndiTexture.isAllocated() && needsMask) {
 			if (lastMaskCaptureTime < 0.0f || (now - lastMaskCaptureTime) >= maskCaptureInterval) {
-				ndiPixelsPrev = ndiPixels;
-				ndiTexture.readToPixels(ndiPixels);
+				ofPixels tempPixels;
+				ndiTexture.readToPixels(tempPixels);
+				if (tempPixels.isAllocated() && tempPixels.getNumChannels() >= 3) {
+					if (ndiPixels.isAllocated()) {
+						ndiPixelsPrev = ndiPixels;
+					}
+					ndiPixels = tempPixels;
+					if (!ndiPixelsPrev.isAllocated()) {
+						ndiPixelsPrev = ndiPixels;
+					}
+					maskPixelsReady = true;
+				} else {
+					maskPixelsReady = false;
+				}
 				lastMaskCaptureTime = now;
-				maskPixelsReady = ndiPixels.isAllocated() && ndiPixelsPrev.isAllocated();
 			}
 		}
 	}
@@ -434,6 +445,11 @@ void ofApp::mousePressed(int x, int y, int button){
 			return;
 		}
 
+		if (ndiTestRect.inside(x, y)) {
+			showNdiTestPattern = !showNdiTestPattern;
+			return;
+		}
+
 		if (foamEnableRect.inside(x, y)) {
 			foamGroupEnabled = !foamGroupEnabled;
 			if (!foamGroupEnabled && selectedLayer == LayerSelection::Foam) {
@@ -553,21 +569,41 @@ void ofApp::mousePressed(int x, int y, int button){
 			return;
 		}
 
-	if (resetRect.inside(x, y)) {
-		const float now = ofGetElapsedTimef();
-		if (resetArmed && (now - resetArmedTime) <= 2.0f) {
-			resetComposition();
-			resetArmed = false;
-		} else {
-			resetArmed = true;
-			resetArmedTime = now;
+		if (resetRect.inside(x, y)) {
+			const float now = ofGetElapsedTimef();
+			if (resetArmed && (now - resetArmedTime) <= 2.0f) {
+				resetComposition();
+				resetArmed = false;
+				currentPresetIndex = 0;
+			} else {
+				resetArmed = true;
+				resetArmedTime = now;
+			}
+			return;
 		}
-		return;
-	}
 
-	if (ndiTestRect.inside(x, y)) {
-		showNdiTestPattern = !showNdiTestPattern;
-		return;
+	for (int i = 0; i < static_cast<int>(presetRects.size()); ++i) {
+		if (presetRects[i].inside(x, y)) {
+			const bool savePreset = ofGetKeyPressed(OF_KEY_SHIFT);
+			const bool clearPreset = ofGetKeyPressed(OF_KEY_ALT);
+			const std::string presetPath = getPresetPath(i + 1);
+			if (clearPreset) {
+				const std::string resolved = ofToDataPath(presetPath, true);
+				if (ofFile::doesFileExist(resolved)) {
+					ofFile::removeFile(resolved);
+				}
+				if (currentPresetIndex == i + 1) {
+					currentPresetIndex = 0;
+				}
+			} else if (savePreset) {
+				saveComposition(presetPath);
+				currentPresetIndex = i + 1;
+			} else {
+				loadComposition(presetPath);
+				currentPresetIndex = i + 1;
+			}
+			return;
+		}
 	}
 }
 
@@ -876,15 +912,21 @@ void ofApp::drawNdiDropdown(){
 	const float fadeX = dropdownRect.x + buttonSize * 2.0f + 16.0f;
 	const float fadeY = ndiEnableRect.y + (buttonSize - sliderHeight) * 0.5f;
 	ndiFadeRect.set(fadeX, fadeY, sliderWidth, sliderHeight);
+	ndiTestRect.set(ndiEnableRect.x + buttonSize + 6.0f, ndiEnableRect.y, buttonSize, buttonSize);
 	ofSetColor(40);
 	ofDrawRectangle(ndiEnableRect);
+	ofDrawRectangle(ndiTestRect);
 	ofSetColor(255);
 	if (ndiEnabled) {
 		ofDrawBitmapString("X", ndiEnableRect.getCenter().x - 3.0f, ndiEnableRect.getCenter().y + 5.0f);
 	}
+	if (showNdiTestPattern) {
+		ofDrawBitmapString("T", ndiTestRect.getCenter().x - 3.0f, ndiTestRect.getCenter().y + 5.0f);
+	}
 	ofNoFill();
 	ofSetColor(110);
 	ofDrawRectangle(ndiEnableRect);
+	ofDrawRectangle(ndiTestRect);
 	ofFill();
 	ofSetColor(60);
 	ofDrawRectangle(ndiFadeRect);
@@ -908,6 +950,8 @@ void ofApp::drawNdiDropdown(){
 	const int my = ofGetMouseY();
 	if (draggingNdiFade || ndiFadeRect.inside(mx, my)) {
 		drawSliderLabel("FADE", ndiFadeRect);
+	} else if (ndiTestRect.inside(mx, my)) {
+		drawSliderLabel("NDI TEST", ndiTestRect);
 	}
 
 	if (dropdownOpen) {
@@ -1117,7 +1161,44 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 	ofDrawRectangle(particleNoiseStartRect);
 	ofFill();
 
-	const float resetY = particleNoiseStartRect.y + particleNoiseStartRect.height + 18.0f;
+	const int mx = ofGetMouseX();
+	const int my = ofGetMouseY();
+
+	const float presetTitleY = particleNoiseStartRect.y + particleNoiseStartRect.height + 24.0f;
+	ofSetColor(200);
+	ofDrawBitmapString("PRESETS", controlsX, presetTitleY);
+	const float presetY = presetTitleY + 10.0f;
+	const float presetSize = 22.0f;
+	const float presetGap = 6.0f;
+	for (int i = 0; i < static_cast<int>(presetRects.size()); ++i) {
+		presetRects[i].set(controlsX + i * (presetSize + presetGap), presetY, presetSize, presetSize);
+		const std::string presetPath = getPresetPath(i + 1);
+		const bool hasPreset = ofFile::doesFileExist(ofToDataPath(presetPath, true));
+		const bool isHover = presetRects[i].inside(mx, my);
+		const bool isActive = currentPresetIndex == i + 1;
+		if (isActive) {
+			ofSetColor(70, 120, 90);
+		} else if (hasPreset) {
+			ofSetColor(60, 70, 90);
+		} else {
+			ofSetColor(40);
+		}
+		if (isHover && !isActive) {
+			ofSetColor(90, 110, 140);
+		}
+		ofDrawRectangle(presetRects[i]);
+		ofSetColor(220);
+		ofDrawBitmapString(ofToString(i + 1), presetRects[i].getCenter().x - 3.0f, presetRects[i].getCenter().y + 5.0f);
+		ofNoFill();
+		ofSetColor(110);
+		ofDrawRectangle(presetRects[i]);
+		ofFill();
+	}
+
+	ofSetColor(200);
+	ofDrawBitmapString("SHIFT=SAVE  ALT=CLEAR", controlsX, presetY + presetSize + 16.0f);
+
+	const float resetY = presetY + presetSize + 34.0f;
 	resetRect.set(controlsX, resetY, panelRect.width, 26.0f);
 	ofSetColor(40);
 	ofDrawRectangle(resetRect);
@@ -1134,23 +1215,7 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 	ofDrawRectangle(resetRect);
 	ofFill();
 
-	const float testY = resetRect.y + resetRect.height + 8.0f;
-	ndiTestRect.set(controlsX, testY, buttonSize, buttonSize);
-	ofSetColor(40);
-	ofDrawRectangle(ndiTestRect);
-	if (showNdiTestPattern) {
-		ofSetColor(255);
-		ofDrawBitmapString("X", ndiTestRect.getCenter().x - 3.0f, ndiTestRect.getCenter().y + 5.0f);
-	}
-	ofNoFill();
-	ofSetColor(110);
-	ofDrawRectangle(ndiTestRect);
-	ofFill();
-	ofSetColor(200);
-	ofDrawBitmapString("NDI TEST", ndiTestRect.x + buttonSize + 8.0f, ndiTestRect.y + buttonSize - 6.0f);
-
-	const int mx = ofGetMouseX();
-	const int my = ofGetMouseY();
+	// NDI test button removed from bottom; now lives next to NDI enable toggle.
 	if (draggingParticleSlider) {
 		if (activeParticleSlider == 0) {
 			drawSliderLabel("SIZE", particleSizeRect);
@@ -1573,6 +1638,10 @@ void ofApp::resetComposition(){
 
 //--------------------------------------------------------------
 void ofApp::saveComposition(){
+	saveComposition(compositionPath);
+}
+
+void ofApp::saveComposition(const std::string &path){
 	ofDirectory presetsDir(ofToDataPath("presets", true));
 	if (!presetsDir.exists()) {
 		presetsDir.create(true);
@@ -1637,17 +1706,22 @@ void ofApp::saveComposition(){
 	data["particles"] = particleArray;
 	data["particlesEnabled"] = particleGroupEnabled;
 
-	ofSavePrettyJson(ofToDataPath(compositionPath, true), data);
+	ofSavePrettyJson(ofToDataPath(path, true), data);
 }
 
 //--------------------------------------------------------------
 void ofApp::loadComposition(){
-	const std::string path = ofToDataPath(compositionPath, true);
-	if (!ofFile::doesFileExist(path)) {
+	loadComposition(compositionPath);
+	currentPresetIndex = 0;
+}
+
+void ofApp::loadComposition(const std::string &path){
+	const std::string resolvedPath = ofToDataPath(path, true);
+	if (!ofFile::doesFileExist(resolvedPath)) {
 		return;
 	}
 
-	ofJson data = ofLoadJson(path);
+	ofJson data = ofLoadJson(resolvedPath);
 	if (data.is_null()) {
 		return;
 	}
@@ -1976,6 +2050,12 @@ void ofApp::updatePreviewRect(){
 	const float maxY = bounds.y + bounds.getHeight() - previewRect.getHeight();
 	previewRect.x = ofClamp(previewRect.x, bounds.x, maxX);
 	previewRect.y = ofClamp(previewRect.y, bounds.y, maxY);
+}
+
+//--------------------------------------------------------------
+std::string ofApp::getPresetPath(int index) const{
+	const int clamped = ofClamp(index, 1, 5);
+	return "presets/composition_" + ofToString(clamped) + ".json";
 }
 
 //--------------------------------------------------------------
