@@ -18,18 +18,26 @@ void ofApp::setup(){
 	outputFbo.end();
 
 	std::string foamShaderPath;
+	std::string mistShaderPath;
 	if (ofIsGLProgrammableRenderer()) {
 		foamShaderPath = "shaders/foam/GL3/foam";
+		mistShaderPath = "shaders/mist/GL3/mist";
 	} else {
 		foamShaderPath = "shaders/foam/GL2/foam";
+		mistShaderPath = "shaders/mist/GL2/mist";
 	}
 	if (!foamShader.load(foamShaderPath)) {
 		ofLogWarning() << "Failed to load foam shader: " << foamShaderPath;
+	}
+	if (!mistShader.load(mistShaderPath)) {
+		ofLogWarning() << "Failed to load mist shader: " << mistShaderPath;
 	}
 
 	gui.setup("CONFIG");
 	gui.setPosition(10.0f, 10.0f);
 	refreshNdiSenders();
+
+	ndiTestFont.load("fonts/arial.ttf", 64, true, true);
 
 	ndiSender.CreateSender(ndiOutputName.c_str(), outputWidth, outputHeight);
 	loadComposition();
@@ -54,10 +62,13 @@ void ofApp::update(){
 
 	if (ndiReceiver.ReceiverCreated()) {
 		ndiReceiver.ReceiveImage(ndiTexture);
-		if (ndiEnabled && ndiReceiver.ReceiverConnected() && ndiTexture.isAllocated()) {
-			ndiTexture.readToPixels(ndiPixels);
-			if (!ndiPixelsPrev.isAllocated()) {
+		const bool needsMask = particleGroupEnabled && !particleSystems.empty();
+		if (ndiEnabled && ndiReceiver.ReceiverConnected() && ndiTexture.isAllocated() && needsMask) {
+			if (lastMaskCaptureTime < 0.0f || (now - lastMaskCaptureTime) >= maskCaptureInterval) {
 				ndiPixelsPrev = ndiPixels;
+				ndiTexture.readToPixels(ndiPixels);
+				lastMaskCaptureTime = now;
+				maskPixelsReady = ndiPixels.isAllocated() && ndiPixelsPrev.isAllocated();
 			}
 		}
 	}
@@ -65,30 +76,29 @@ void ofApp::update(){
 	updateNdiPlacement();
 	updateFoamLayers();
 	updateParticles(ofGetLastFrameTime());
-	if (ndiPixels.isAllocated()) {
-		ndiPixelsPrev = ndiPixels;
-	}
 
 	if (outputFbo.isAllocated()) {
 		outputFbo.begin();
 		ofClear(0, 0, 0, 255);
-		if (ndiEnabled && ndiTexture.isAllocated() && ndiReceiver.ReceiverConnected()) {
-			const ofRectangle ndiRect = getNdiOutputRect();
-			ofDisableAlphaBlending();
-			ofSetColor(255, 255, 255, static_cast<unsigned char>(ndiFade * 255.0f));
-			ndiTexture.draw(ndiRect);
+		if (showNdiTestPattern) {
+			drawNdiTestPattern();
 		}
-		drawParticles();
-		ofEnableAlphaBlending();
-		if (foamGroupEnabled) {
-			for (const auto &layer : foamLayers) {
-				if (layer.fbo.isAllocated() && layer.enabled) {
-					ofSetColor(255);
-					layer.fbo.draw(layer.position.x, layer.position.y, layer.size.x, layer.size.y);
-				}
-			}
-		}
-		ofDisableAlphaBlending();
+        if (ndiEnabled && ndiTexture.isAllocated() && ndiReceiver.ReceiverConnected()) {
+            const ofRectangle ndiRect = getNdiOutputRect();
+            ofDisableAlphaBlending();
+            ofSetColor(255, 255, 255, static_cast<unsigned char>(ndiFade * 255.0f));
+            ndiTexture.draw(ndiRect);
+        }
+        drawParticles();
+        ofEnableAlphaBlending();
+        if (foamGroupEnabled) {
+            for (const auto &layer : foamLayers) {
+                if (layer.fbo.isAllocated() && layer.enabled) {
+                    ofSetColor(255);
+                    layer.fbo.draw(layer.position.x, layer.position.y, layer.size.x, layer.size.y);
+                }
+            }
+        }
 		outputFbo.end();
 
 		if (ndiSender.SenderCreated()) {
@@ -107,6 +117,13 @@ void ofApp::draw(){
 	if (outputFbo.isAllocated()) {
 		ofSetColor(255);
 		outputFbo.getTexture().draw(previewRect);
+	}
+	if (!showNdiTestPattern && previewRect.getWidth() > 0.0f && previewRect.getHeight() > 0.0f) {
+		ofNoFill();
+		ofSetColor(255);
+		ofSetLineWidth(1.5f);
+		ofDrawRectangle(previewRect);
+		ofFill();
 	}
 
 	if (draggingFoam && selectedFoamIndex >= 0 && selectedFoamIndex < static_cast<int>(foamLayers.size())) {
@@ -142,6 +159,12 @@ void ofApp::draw(){
 		ofFill();
 		ofSetColor(255, 180, 0);
 		ofDrawBitmapString("X", windowRect.x + 4.0f, windowRect.y + 12.0f);
+		if (layer.locked) {
+			ofSetColor(255, 180, 0);
+		} else {
+			ofSetColor(120);
+		}
+		ofDrawBitmapString("L", windowRect.x + windowRect.width - 12.0f, windowRect.y + 12.0f);
 	}
 
 	if (!draggingNdi && selectedLayer == LayerSelection::NDI && ndiTexture.isAllocated()) {
@@ -164,6 +187,12 @@ void ofApp::draw(){
 		ofFill();
 		ofSetColor(255, 180, 0);
 		ofDrawBitmapString("X", windowRect.x + 4.0f, windowRect.y + 12.0f);
+		if (particleSystems[selectedParticleIndex].locked) {
+			ofSetColor(255, 180, 0);
+		} else {
+			ofSetColor(120);
+		}
+		ofDrawBitmapString("L", windowRect.x + windowRect.width - 12.0f, windowRect.y + 12.0f);
 	}
 
 	if (showAllBorders) {
@@ -202,6 +231,18 @@ void ofApp::draw(){
 				&layer == &foamLayers[selectedFoamIndex]) {
 				ofSetColor(255, 180, 0);
 				ofDrawBitmapString("X", windowRect.x + 4.0f, windowRect.y + 12.0f);
+				if (layer.locked) {
+					ofSetColor(255, 180, 0);
+				} else {
+					ofSetColor(120);
+				}
+				ofDrawBitmapString("L", windowRect.x + windowRect.width - 12.0f, windowRect.y + 12.0f);
+			} else {
+				ofSetColor(0, 120, 255);
+				if (layer.locked) {
+					ofSetColor(255, 180, 0);
+				}
+				ofDrawBitmapString("L", windowRect.x + windowRect.width - 12.0f, windowRect.y + 12.0f);
 			}
 		}
 
@@ -221,6 +262,18 @@ void ofApp::draw(){
 				&system == &particleSystems[selectedParticleIndex]) {
 				ofSetColor(255, 180, 0);
 				ofDrawBitmapString("X", windowRect.x + 4.0f, windowRect.y + 12.0f);
+				if (system.locked) {
+					ofSetColor(255, 180, 0);
+				} else {
+					ofSetColor(120);
+				}
+				ofDrawBitmapString("L", windowRect.x + windowRect.width - 12.0f, windowRect.y + 12.0f);
+			} else {
+				ofSetColor(0, 120, 255);
+				if (system.locked) {
+					ofSetColor(255, 180, 0);
+				}
+				ofDrawBitmapString("L", windowRect.x + windowRect.width - 12.0f, windowRect.y + 12.0f);
 			}
 		}
 	}
@@ -232,6 +285,13 @@ void ofApp::draw(){
 		drawParticleControls();
 		drawNdiDropdown();
 	}
+
+	const float fpsX = previewRect.x + 8.0f;
+	const float fpsY = previewRect.y + 18.0f;
+	ofSetColor(0, 0, 0, 160);
+	ofDrawRectangle(fpsX - 4.0f, fpsY - 14.0f, 70.0f, 18.0f);
+	ofSetColor(220);
+	ofDrawBitmapString("FPS " + ofToString(ofGetFrameRate(), 1), fpsX, fpsY);
 
 }
 
@@ -261,6 +321,7 @@ void ofApp::keyPressed(int key){
 
 //--------------------------------------------------------------
 void ofApp::keyReleased(int key){
+	
 
 }
 
@@ -274,6 +335,9 @@ void ofApp::mouseDragged(int x, int y, int button){
 	if (draggingFoam && selectedFoamIndex >= 0 && selectedFoamIndex < static_cast<int>(foamLayers.size())) {
 		const ofVec2f outputPos = windowToOutput(ofVec2f(x, y));
 		FoamLayer &layer = foamLayers[selectedFoamIndex];
+		if (layer.locked) {
+			return;
+		}
 		layer.position.x = outputPos.x - foamDragOffset.x;
 		layer.position.y = outputPos.y - foamDragOffset.y;
 
@@ -296,6 +360,11 @@ void ofApp::mouseDragged(int x, int y, int button){
 		updateSelectedFoamFade(static_cast<float>(x));
 	}
 
+	if (draggingMistSpeed) {
+		const float t = ofClamp((x - mistSpeedRect.x) / mistSpeedRect.width, 0.0f, 1.0f);
+		mistSpeed = ofLerp(0.2f, 2.0f, t);
+	}
+
 	if (draggingNdiFade) {
 		const float t = ofClamp((x - ndiFadeRect.x) / ndiFadeRect.width, 0.0f, 1.0f);
 		ndiFade = t;
@@ -308,6 +377,9 @@ void ofApp::mouseDragged(int x, int y, int button){
 	if (draggingEmitter && selectedParticleIndex >= 0 && selectedParticleIndex < static_cast<int>(particleSystems.size())) {
 		const ofVec2f outputPos = windowToOutput(ofVec2f(x, y));
 		ParticleSystem &system = particleSystems[selectedParticleIndex];
+		if (system.locked) {
+			return;
+		}
 		system.emitterRect.x = outputPos.x - emitterDragOffset.x;
 		system.emitterRect.y = outputPos.y - emitterDragOffset.y;
 		system.emitterRect.x = ofClamp(system.emitterRect.x, -system.emitterRect.width, static_cast<float>(outputWidth));
@@ -349,6 +421,9 @@ void ofApp::mousePressed(int x, int y, int button){
 
 		if (ndiEnableRect.inside(x, y)) {
 			ndiEnabled = !ndiEnabled;
+			if (!ndiEnabled && selectedLayer == LayerSelection::NDI) {
+				selectedLayer = LayerSelection::None;
+			}
 			return;
 		}
 
@@ -361,6 +436,15 @@ void ofApp::mousePressed(int x, int y, int button){
 
 		if (foamEnableRect.inside(x, y)) {
 			foamGroupEnabled = !foamGroupEnabled;
+			if (!foamGroupEnabled && selectedLayer == LayerSelection::Foam) {
+				selectedLayer = LayerSelection::None;
+				selectedFoamIndex = -1;
+			}
+			return;
+		}
+
+		if (foamMistRect.inside(x, y)) {
+			foamUseMist = !foamUseMist;
 			return;
 		}
 
@@ -380,8 +464,19 @@ void ofApp::mousePressed(int x, int y, int button){
 			return;
 		}
 
+		if (mistSpeedRect.inside(x, y)) {
+			draggingMistSpeed = true;
+			const float t = ofClamp((x - mistSpeedRect.x) / mistSpeedRect.width, 0.0f, 1.0f);
+			mistSpeed = ofLerp(0.2f, 2.0f, t);
+			return;
+		}
+
 		if (particleEnableRect.inside(x, y)) {
 			particleGroupEnabled = !particleGroupEnabled;
+			if (!particleGroupEnabled && selectedLayer == LayerSelection::Particles) {
+				selectedLayer = LayerSelection::None;
+				selectedParticleIndex = -1;
+			}
 			return;
 		}
 
@@ -458,24 +553,34 @@ void ofApp::mousePressed(int x, int y, int button){
 			return;
 		}
 
-		if (resetRect.inside(x, y)) {
-			const float now = ofGetElapsedTimef();
-			if (resetArmed && (now - resetArmedTime) <= 2.0f) {
-				resetComposition();
-				resetArmed = false;
-			} else {
-				resetArmed = true;
-				resetArmedTime = now;
-			}
-			return;
+	if (resetRect.inside(x, y)) {
+		const float now = ofGetElapsedTimef();
+		if (resetArmed && (now - resetArmedTime) <= 2.0f) {
+			resetComposition();
+			resetArmed = false;
+		} else {
+			resetArmed = true;
+			resetArmedTime = now;
 		}
+		return;
 	}
+
+	if (ndiTestRect.inside(x, y)) {
+		showNdiTestPattern = !showNdiTestPattern;
+		return;
+	}
+}
 
 	if (selectedLayer == LayerSelection::Foam && selectedFoamIndex >= 0 &&
 		selectedFoamIndex < static_cast<int>(foamLayers.size())) {
 		const FoamLayer &layer = foamLayers[selectedFoamIndex];
 		const ofRectangle windowRect = outputToWindowRect(ofRectangle(layer.position.x, layer.position.y, layer.size.x, layer.size.y));
 		const ofRectangle closeRect(windowRect.x, windowRect.y, 14.0f, 14.0f);
+		const ofRectangle lockRect(windowRect.x + windowRect.width - 14.0f, windowRect.y, 14.0f, 14.0f);
+		if (lockRect.inside(x, y)) {
+			foamLayers[selectedFoamIndex].locked = !foamLayers[selectedFoamIndex].locked;
+			return;
+		}
 		if (closeRect.inside(x, y)) {
 			foamLayers.erase(foamLayers.begin() + selectedFoamIndex);
 			selectedFoamIndex = foamLayers.empty() ? -1 : ofClamp(selectedFoamIndex, 0, static_cast<int>(foamLayers.size()) - 1);
@@ -487,6 +592,11 @@ void ofApp::mousePressed(int x, int y, int button){
 		selectedParticleIndex < static_cast<int>(particleSystems.size())) {
 		const ofRectangle windowRect = outputToWindowRect(particleSystems[selectedParticleIndex].emitterRect);
 		const ofRectangle closeRect(windowRect.x, windowRect.y, 14.0f, 14.0f);
+		const ofRectangle lockRect(windowRect.x + windowRect.width - 14.0f, windowRect.y, 14.0f, 14.0f);
+		if (lockRect.inside(x, y)) {
+			particleSystems[selectedParticleIndex].locked = !particleSystems[selectedParticleIndex].locked;
+			return;
+		}
 		if (closeRect.inside(x, y)) {
 			particleSystems.erase(particleSystems.begin() + selectedParticleIndex);
 			selectedParticleIndex = particleSystems.empty() ? -1 : ofClamp(selectedParticleIndex, 0, static_cast<int>(particleSystems.size()) - 1);
@@ -498,19 +608,52 @@ void ofApp::mousePressed(int x, int y, int button){
 		const ofVec2f outputPos = windowToOutput(ofVec2f(x, y));
 		bool hitLayer = false;
 		int hitIndex = -1;
+		for (int i = static_cast<int>(foamLayers.size()) - 1; i >= 0; --i) {
+			if (!foamLayers[i].enabled) {
+				continue;
+			}
+			const ofRectangle outputRect(foamLayers[i].position.x, foamLayers[i].position.y,
+				foamLayers[i].size.x, foamLayers[i].size.y);
+			const ofRectangle windowRect = outputToWindowRect(outputRect);
+			const ofRectangle lockRect(windowRect.x + windowRect.width - 14.0f, windowRect.y, 14.0f, 14.0f);
+			if (lockRect.inside(x, y)) {
+				foamLayers[i].locked = !foamLayers[i].locked;
+				return;
+			}
+		}
+
+		for (int i = static_cast<int>(particleSystems.size()) - 1; i >= 0; --i) {
+			if (!particleSystems[i].enabled) {
+				continue;
+			}
+			const ofRectangle windowRect = outputToWindowRect(particleSystems[i].emitterRect);
+			const ofRectangle lockRect(windowRect.x + windowRect.width - 14.0f, windowRect.y, 14.0f, 14.0f);
+			if (lockRect.inside(x, y)) {
+				particleSystems[i].locked = !particleSystems[i].locked;
+				return;
+			}
+		}
 		if (hitTestFoamLayer(outputPos, hitIndex)) {
 			selectedFoamIndex = hitIndex;
 			selectedLayer = LayerSelection::Foam;
 			draggingFoam = true;
 			const FoamLayer &layer = foamLayers[selectedFoamIndex];
+			if (layer.locked) {
+				draggingFoam = false;
+				return;
+			}
 			foamDragOffset.set(outputPos.x - layer.position.x, outputPos.y - layer.position.y);
 			hitLayer = true;
 			return;
 		}
 
-		if (!particleSystems.empty()) {
+		if (!particleSystems.empty() && particleGroupEnabled) {
 			for (int i = static_cast<int>(particleSystems.size()) - 1; i >= 0; --i) {
-				if (particleSystems[i].emitterRect.inside(outputPos)) {
+				if (particleSystems[i].enabled && particleSystems[i].emitterRect.inside(outputPos)) {
+					if (particleSystems[i].locked) {
+						hitLayer = true;
+						return;
+					}
 					selectedParticleIndex = i;
 					selectedLayer = LayerSelection::Particles;
 					draggingEmitter = true;
@@ -522,7 +665,7 @@ void ofApp::mousePressed(int x, int y, int button){
 			}
 		}
 
-		if (ndiTexture.isAllocated()) {
+		if (ndiEnabled && ndiTexture.isAllocated()) {
 			const ofRectangle ndiRect = getNdiOutputRect();
 			if (ndiRect.inside(outputPos)) {
 				selectedLayer = LayerSelection::NDI;
@@ -549,6 +692,7 @@ void ofApp::mouseReleased(int x, int y, int button){
 	draggingFoam = false;
 	draggingNdi = false;
 	draggingFade = false;
+	draggingMistSpeed = false;
 	draggingNdiFade = false;
 	draggingParticleSlider = false;
 	activeParticleSlider = -1;
@@ -799,11 +943,11 @@ void ofApp::drawFoamControls(){
 	addFoamRect.set(controlsX, controlsY, buttonSize, buttonSize);
 	deleteFoamRect.set(addFoamRect.x + buttonSize + 8.0f, controlsY, buttonSize, buttonSize);
 	foamEnableRect.set(controlsX, controlsY + buttonSize + 8.0f, buttonSize, buttonSize);
+	foamMistRect.set(foamEnableRect.x + buttonSize + 6.0f, foamEnableRect.y, buttonSize, buttonSize);
 	const float fadeX = deleteFoamRect.x + buttonSize + 8.0f;
 	const float fadeW = panelRect.width - (fadeX - panelRect.x);
-	fadeSliderRect.set(fadeX,
-		controlsY + (buttonSize - sliderHeight) * 0.5f,
-		fadeW, sliderHeight);
+	fadeSliderRect.set(fadeX, controlsY, fadeW, sliderHeight);
+	mistSpeedRect.set(fadeX, fadeSliderRect.y + sliderHeight + 6.0f, fadeW, sliderHeight);
 
 	ofPushStyle();
 	ofSetColor(200);
@@ -813,12 +957,16 @@ ofDrawBitmapString("FOAM", controlsX, controlsY - 7.0f);
 	ofDrawRectangle(addFoamRect);
 	ofDrawRectangle(deleteFoamRect);
 	ofDrawRectangle(foamEnableRect);
+	ofDrawRectangle(foamMistRect);
 
 	ofSetColor(255);
 	ofDrawBitmapString("+", addFoamRect.getCenter().x - 3.0f, addFoamRect.getCenter().y + 5.0f);
 	ofDrawBitmapString("-", deleteFoamRect.getCenter().x - 3.0f, deleteFoamRect.getCenter().y + 5.0f);
 	if (foamGroupEnabled) {
 		ofDrawBitmapString("X", foamEnableRect.getCenter().x - 3.0f, foamEnableRect.getCenter().y + 5.0f);
+	}
+	if (foamUseMist) {
+		ofDrawBitmapString("M", foamMistRect.getCenter().x - 3.0f, foamMistRect.getCenter().y + 5.0f);
 	}
 
 	float fadeValue = 0.0f;
@@ -832,9 +980,16 @@ ofDrawBitmapString("FOAM", controlsX, controlsY - 7.0f);
 	ofSetColor(180);
 	ofDrawRectangle(fadeSliderRect.x, fadeSliderRect.y, filledWidth, fadeSliderRect.height);
 
+	const float mistSpeedValue = ofClamp(ofMap(mistSpeed, 0.2f, 2.0f, 0.0f, 1.0f, true), 0.0f, 1.0f);
+	ofSetColor(60);
+	ofDrawRectangle(mistSpeedRect);
+	ofSetColor(180);
+	ofDrawRectangle(mistSpeedRect.x, mistSpeedRect.y, mistSpeedRect.width * mistSpeedValue, mistSpeedRect.height);
+
 	ofNoFill();
 	ofSetColor(110);
 	ofDrawRectangle(fadeSliderRect);
+	ofDrawRectangle(mistSpeedRect);
 	ofFill();
 
 	ofNoFill();
@@ -842,12 +997,20 @@ ofDrawBitmapString("FOAM", controlsX, controlsY - 7.0f);
 	ofDrawRectangle(addFoamRect);
 	ofDrawRectangle(deleteFoamRect);
 	ofDrawRectangle(foamEnableRect);
+	ofDrawRectangle(foamMistRect);
 	ofFill();
 
 	const int mx = ofGetMouseX();
 	const int my = ofGetMouseY();
 	if (draggingFade || fadeSliderRect.inside(mx, my)) {
 		drawSliderLabel("FADE", fadeSliderRect);
+	} else if (draggingMistSpeed || mistSpeedRect.inside(mx, my)) {
+		drawSliderLabel("MIST SPEED", mistSpeedRect);
+	} else if (foamMistRect.inside(mx, my)) {
+		ofSetColor(200);
+		const float labelX = foamMistRect.x + foamMistRect.width + 8.0f;
+		const float labelY = foamMistRect.y + foamMistRect.height - 8.0f;
+		ofDrawBitmapString("MIST", labelX, labelY);
 	}
 
 	ofPopStyle();
@@ -969,6 +1132,21 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 	ofDrawRectangle(resetRect);
 	ofFill();
 
+	const float testY = resetRect.y + resetRect.height + 8.0f;
+	ndiTestRect.set(controlsX, testY, buttonSize, buttonSize);
+	ofSetColor(40);
+	ofDrawRectangle(ndiTestRect);
+	if (showNdiTestPattern) {
+		ofSetColor(255);
+		ofDrawBitmapString("X", ndiTestRect.getCenter().x - 3.0f, ndiTestRect.getCenter().y + 5.0f);
+	}
+	ofNoFill();
+	ofSetColor(110);
+	ofDrawRectangle(ndiTestRect);
+	ofFill();
+	ofSetColor(200);
+	ofDrawBitmapString("NDI TEST", ndiTestRect.x + buttonSize + 8.0f, ndiTestRect.y + buttonSize - 6.0f);
+
 	const int mx = ofGetMouseX();
 	const int my = ofGetMouseY();
 	if (draggingParticleSlider) {
@@ -1055,11 +1233,14 @@ void ofApp::updateParticles(float dt){
 		return;
 	}
 
-	const bool maskActive = ndiEnabled && ndiReceiver.ReceiverConnected() && ndiPixels.isAllocated()
-		&& ndiPixelsPrev.isAllocated();
+	const bool maskActive = ndiEnabled && ndiReceiver.ReceiverConnected() && maskPixelsReady
+		&& ndiPixels.isAllocated() && ndiPixelsPrev.isAllocated();
 	const ofRectangle ndiRect = getNdiOutputRect();
 	const int maskW = ndiPixels.getWidth();
 	const int maskH = ndiPixels.getHeight();
+	const int maskChannels = ndiPixels.getNumChannels();
+	const unsigned char *maskData = ndiPixels.getData();
+	const unsigned char *maskPrevData = ndiPixelsPrev.getData();
 	const float maskThreshold = 0.65f;
 	const int maskSearchRadius = 6;
 
@@ -1141,6 +1322,9 @@ void ofApp::updateParticles(float dt){
 			}
 
 			for (const auto &foam : foamLayers) {
+				if (foam.useMist) {
+					continue;
+				}
 				const float lineY = foam.position.y + foam.size.y * 0.25f;
 				if (particle.position.x >= foam.position.x && particle.position.x <= foam.position.x + foam.size.x) {
 					if (particle.prevPos.y < lineY && particle.position.y >= lineY && particle.velocity.y > 0.0f) {
@@ -1154,7 +1338,7 @@ void ofApp::updateParticles(float dt){
 				}
 			}
 
-			if (maskActive && ndiRect.inside(particle.position)) {
+			if (maskActive && maskChannels >= 3 && ndiRect.inside(particle.position)) {
 				const float u = (particle.position.x - ndiRect.x) / ndiRect.width;
 				const float v = (particle.position.y - ndiRect.y) / ndiRect.height;
 				const float pu = (particle.prevPos.x - ndiRect.x) / ndiRect.width;
@@ -1163,10 +1347,10 @@ void ofApp::updateParticles(float dt){
 				const int yi = ofClamp(static_cast<int>(v * (maskH - 1)), 0, maskH - 1);
 				const int xip = ofClamp(static_cast<int>(pu * (maskW - 1)), 0, maskW - 1);
 				const int yip = ofClamp(static_cast<int>(pv * (maskH - 1)), 0, maskH - 1);
-				const ofColor curr = ndiPixels.getColor(xi, yi);
-				const ofColor prev = ndiPixelsPrev.getColor(xip, yip);
-				const float currBright = (curr.r + curr.g + curr.b) / (3.0f * 255.0f);
-				const float prevBright = (prev.r + prev.g + prev.b) / (3.0f * 255.0f);
+				const int currIndex = (yi * maskW + xi) * maskChannels;
+				const int prevIndex = (yip * maskW + xip) * maskChannels;
+				const float currBright = (maskData[currIndex] + maskData[currIndex + 1] + maskData[currIndex + 2]) / (3.0f * 255.0f);
+				const float prevBright = (maskPrevData[prevIndex] + maskPrevData[prevIndex + 1] + maskPrevData[prevIndex + 2]) / (3.0f * 255.0f);
 
 				if (prevBright < maskThreshold && currBright >= maskThreshold) {
 					float motionSpeed = 0.0f;
@@ -1178,8 +1362,8 @@ void ofApp::updateParticles(float dt){
 							for (int dx = -maskSearchRadius; dx <= maskSearchRadius; ++dx) {
 								const int sx = ofClamp(xi + dx, 0, maskW - 1);
 								const int sy = ofClamp(yi + dy, 0, maskH - 1);
-								const ofColor sample = ndiPixelsPrev.getColor(sx, sy);
-								const float bright = (sample.r + sample.g + sample.b) / (3.0f * 255.0f);
+								const int sampleIndex = (sy * maskW + sx) * maskChannels;
+								const float bright = (maskPrevData[sampleIndex] + maskPrevData[sampleIndex + 1] + maskPrevData[sampleIndex + 2]) / (3.0f * 255.0f);
 								if (bright > maxBright) {
 									maxBright = bright;
 									bestX = sx;
@@ -1339,6 +1523,41 @@ void ofApp::drawSliderLabel(const std::string &label, const ofRectangle &rect) c
 }
 
 //--------------------------------------------------------------
+void ofApp::drawNdiTestPattern(){
+	ofPushStyle();
+	ofSetColor(35, 35, 35, 255);
+	ofDrawRectangle(0.0f, 0.0f, outputWidth, outputHeight);
+
+	const std::string label = "ROTOR STUDIO";
+	const std::string topLabel = "PANTALLA ARRIBA";
+	const std::string bottomLabel = "PANTALLA ABAJO";
+	ofSetColor(230);
+	if (ndiTestFont.isLoaded()) {
+		const ofRectangle labelBounds = ndiTestFont.getStringBoundingBox(label, 0.0f, 0.0f);
+		const float labelX = (outputWidth - labelBounds.width) * 0.5f;
+		const float labelY = outputHeight * 0.5f + labelBounds.height * 0.5f;
+		ndiTestFont.drawString(label, labelX, labelY);
+
+		const ofRectangle topBounds = ndiTestFont.getStringBoundingBox(topLabel, 0.0f, 0.0f);
+		const float topX = (outputWidth - topBounds.width) * 0.5f;
+		const float topY = outputHeight * 0.25f + topBounds.height * 0.5f;
+		ndiTestFont.drawString(topLabel, topX, topY);
+
+		const ofRectangle bottomBounds = ndiTestFont.getStringBoundingBox(bottomLabel, 0.0f, 0.0f);
+		const float bottomX = (outputWidth - bottomBounds.width) * 0.5f;
+		const float bottomY = outputHeight * 0.75f + bottomBounds.height * 0.5f;
+		ndiTestFont.drawString(bottomLabel, bottomX, bottomY);
+	} else {
+		const float textW = label.size() * 8.0f;
+		ofDrawBitmapString(label, (outputWidth - textW) * 0.5f, outputHeight * 0.5f + 6.0f);
+		ofDrawBitmapString(topLabel, (outputWidth - topLabel.size() * 8.0f) * 0.5f, outputHeight * 0.25f + 6.0f);
+		ofDrawBitmapString(bottomLabel, (outputWidth - bottomLabel.size() * 8.0f) * 0.5f, outputHeight * 0.75f + 6.0f);
+	}
+
+	ofPopStyle();
+}
+
+//--------------------------------------------------------------
 void ofApp::resetComposition(){
 	selectSenderIndex(0);
 	foamLayers.clear();
@@ -1371,6 +1590,7 @@ void ofApp::saveComposition(){
 	data["ndi"]["enabled"] = ndiEnabled;
 	data["ndi"]["fade"] = ndiFade;
 	data["foamEnabled"] = foamGroupEnabled;
+	data["foamMistSpeed"] = mistSpeed;
 	data["ndi"]["position"] = { {"x", ndiPosition.x}, {"y", ndiPosition.y} };
 
 	ofJson foamArray = ofJson::array();
@@ -1382,7 +1602,9 @@ void ofApp::saveComposition(){
 			{"h", layer.size.y},
 			{"fade", layer.fade},
 			{"timeOffset", layer.timeOffset},
+			{"useMist", layer.useMist},
 			{"enabled", layer.enabled}
+			,{"locked", layer.locked}
 		});
 	}
 	data["foam"] = foamArray;
@@ -1406,7 +1628,8 @@ void ofApp::saveComposition(){
 			{"fade", system.fade},
 			{"noise", system.noise},
 			{"noiseStart", system.noiseStart},
-			{"enabled", system.enabled}
+			{"enabled", system.enabled},
+			{"locked", system.locked}
 		});
 	}
 	data["particles"] = particleArray;
@@ -1455,6 +1678,7 @@ void ofApp::loadComposition(){
 	}
 
 	foamGroupEnabled = data.value("foamEnabled", true);
+	mistSpeed = data.value("foamMistSpeed", 1.0f);
 	foamLayers.clear();
 	if (data.contains("foam")) {
 		for (const auto &item : data["foam"]) {
@@ -1463,7 +1687,9 @@ void ofApp::loadComposition(){
 			layer.size.set(item.value("w", 400.0f), item.value("h", 300.0f));
 			layer.fade = item.value("fade", 0.85f);
 			layer.timeOffset = item.value("timeOffset", ofRandom(1000.0f));
+			layer.useMist = item.value("useMist", false);
 			layer.enabled = item.value("enabled", true);
+			layer.locked = item.value("locked", false);
 			layer.fbo.allocate(static_cast<int>(layer.size.x), static_cast<int>(layer.size.y), GL_RGBA);
 			layer.fbo.begin();
 			ofClear(0, 0, 0, 0);
@@ -1498,6 +1724,7 @@ void ofApp::loadComposition(){
 			system.noise = item.value("noise", 0.0f);
 			system.noiseStart = item.value("noiseStart", 0.5f);
 			system.enabled = item.value("enabled", true);
+			system.locked = item.value("locked", false);
 			system.spawnRate = ofMap(system.maxParticles, 240.0f, 1500.0f, 80.0f, 800.0f, true);
 			system.spawnAccumulator = 0.0f;
 			system.particles.clear();
@@ -1534,9 +1761,15 @@ void ofApp::createFoamLayer(){
 	}
 
 	FoamLayer layer;
-	layer.size.set(400.0f, 300.0f);
-	layer.position.set((outputWidth - layer.size.x) * 0.5f, (outputHeight - layer.size.y) * 0.5f);
+	if (foamUseMist) {
+		layer.size.set(400.0f, 900.0f);
+		layer.position.set((outputWidth - layer.size.x) * 0.5f, 0.0f);
+	} else {
+		layer.size.set(400.0f, 300.0f);
+		layer.position.set((outputWidth - layer.size.x) * 0.5f, (outputHeight - layer.size.y) * 0.5f);
+	}
 	layer.timeOffset = ofRandom(1000.0f);
+	layer.useMist = foamUseMist;
 	layer.fbo.allocate(static_cast<int>(layer.size.x), static_cast<int>(layer.size.y), GL_RGBA);
 	layer.fbo.begin();
 	ofClear(0, 0, 0, 0);
@@ -1563,31 +1796,50 @@ void ofApp::removeSelectedFoamLayer(){
 
 //--------------------------------------------------------------
 void ofApp::updateFoamLayers(){
+	if (!foamGroupEnabled) {
+		return;
+	}
 	if (!foamShader.isLoaded()) {
+		return;
+	}
+	if (!mistShader.isLoaded()) {
 		return;
 	}
 
 	const float time = ofGetElapsedTimef();
 	for (auto &layer : foamLayers) {
-		if (!layer.fbo.isAllocated()) {
+		if (!layer.fbo.isAllocated() || !layer.enabled) {
 			continue;
 		}
 		layer.fbo.begin();
 		ofClear(0, 0, 0, 0);
-		foamShader.begin();
-		foamShader.setUniform2f("u_resolution", layer.size.x, layer.size.y);
-		foamShader.setUniform1f("u_time", time + layer.timeOffset);
-		foamShader.setUniform1f("u_intensity", layer.fade);
+		ofShader &shader = layer.useMist ? mistShader : foamShader;
+		shader.begin();
+		shader.setUniform2f("u_resolution", layer.size.x, layer.size.y);
+		shader.setUniform1f("u_time", time + layer.timeOffset);
+		shader.setUniform1f("u_intensity", layer.fade);
+		if (layer.useMist) {
+			shader.setUniform1f("u_speed", mistSpeed);
+		}
 		ofDrawRectangle(0.0f, 0.0f, layer.size.x, layer.size.y);
-		foamShader.end();
+		shader.end();
 		layer.fbo.end();
 	}
 }
 
 //--------------------------------------------------------------
 bool ofApp::hitTestFoamLayer(const ofVec2f &outputPos, int &hitIndex) const{
+	if (!foamGroupEnabled) {
+		return false;
+	}
 	for (int i = static_cast<int>(foamLayers.size()) - 1; i >= 0; --i) {
 		const FoamLayer &layer = foamLayers[i];
+		if (!layer.enabled) {
+			continue;
+		}
+		if (layer.locked) {
+			continue;
+		}
 		ofRectangle rect(layer.position.x, layer.position.y, layer.size.x, layer.size.y);
 		if (rect.inside(outputPos)) {
 			hitIndex = i;
@@ -1696,15 +1948,17 @@ void ofApp::updatePreviewRect(){
 		return;
 	}
 
-	const ofRectangle bounds(0.0f, 0.0f, ofGetWidth(), ofGetHeight());
+	const float sidebarWidth = getUiSidebarWidth();
+	const float usableWidth = std::max(1.0f, ofGetWidth() - sidebarWidth);
+	const ofRectangle bounds(sidebarWidth, 0.0f, usableWidth, ofGetHeight());
 	ofRectangle fit(0.0f, 0.0f, texW, texH);
 	fit.scaleTo(bounds, OF_SCALEMODE_FIT);
 
 	if (!previewRectInitialized) {
 		previewRect = fit;
 		previewRect.setPosition(
-			(bounds.getWidth() - fit.getWidth()) * 0.5f,
-			(bounds.getHeight() - fit.getHeight()) * 0.5f);
+			bounds.x + (bounds.getWidth() - fit.getWidth()) * 0.5f,
+			bounds.y + (bounds.getHeight() - fit.getHeight()) * 0.5f);
 		previewRectInitialized = true;
 		return;
 	}
@@ -1712,8 +1966,16 @@ void ofApp::updatePreviewRect(){
 	const ofVec2f center = previewRect.getCenter();
 	previewRect.setFromCenter(center, fit.getWidth(), fit.getHeight());
 
-	const float maxX = ofGetWidth() - previewRect.getWidth();
-	const float maxY = ofGetHeight() - previewRect.getHeight();
-	previewRect.x = ofClamp(previewRect.x, 0.0f, maxX);
-	previewRect.y = ofClamp(previewRect.y, 0.0f, maxY);
+	const float maxX = bounds.x + bounds.getWidth() - previewRect.getWidth();
+	const float maxY = bounds.y + bounds.getHeight() - previewRect.getHeight();
+	previewRect.x = ofClamp(previewRect.x, bounds.x, maxX);
+	previewRect.y = ofClamp(previewRect.y, bounds.y, maxY);
+}
+
+//--------------------------------------------------------------
+float ofApp::getUiSidebarWidth() const{
+	if (!showGui) {
+		return 0.0f;
+	}
+	return gui.getShape().getWidth() + 20.0f;
 }

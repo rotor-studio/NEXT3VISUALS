@@ -53,6 +53,8 @@ private:
 	void updateSelectedFoamFade(float mouseX);
 	void updateNdiPlacement();
 	ofRectangle getNdiOutputRect() const;
+	void drawNdiTestPattern();
+	float getUiSidebarWidth() const;
 
 	ofxNDIreceiver ndiReceiver;
 	ofxNDIsender ndiSender;
@@ -62,6 +64,9 @@ private:
 	ofPixels ndiPixelsPrev;
 	bool ndiEnabled = true;
 	float ndiFade = 1.0f;
+	float maskCaptureInterval = 1.0f / 15.0f;
+	float lastMaskCaptureTime = -1.0f;
+	bool maskPixelsReady = false;
 	ofFbo outputFbo;
 	int outputWidth = 1080;
 	int outputHeight = 3840;
@@ -92,24 +97,35 @@ private:
 		ofVec2f size;
 		float timeOffset = 0.0f;
 		float fade = 0.85f;
+		bool useMist = false;
 		bool enabled = true;
+		bool locked = false;
 	};
 
 	ofShader foamShader;
+	ofShader mistShader;
 	std::vector<FoamLayer> foamLayers;
 	int selectedFoamIndex = -1;
 	bool draggingFoam = false;
 	ofVec2f foamDragOffset;
+	ofTrueTypeFont ndiTestFont;
 
 	ofRectangle addFoamRect;
 	ofRectangle deleteFoamRect;
 	ofRectangle fadeSliderRect;
+	ofRectangle mistSpeedRect;
 	ofRectangle resetRect;
+	ofRectangle ndiTestRect;
 	bool draggingFade = false;
+	bool draggingMistSpeed = false;
 	bool resetArmed = false;
 	float resetArmedTime = 0.0f;
+	bool showNdiTestPattern = false;
 	ofRectangle foamEnableRect;
+	ofRectangle foamMistRect;
 	bool foamGroupEnabled = true;
+	bool foamUseMist = false;
+	float mistSpeed = 1.0f;
 
 	bool showAllBorders = false;
 
@@ -145,6 +161,7 @@ private:
 		float noise = 0.0f;
 		float noiseStart = 0.5f;
 		bool enabled = true;
+		bool locked = false;
 	};
 
 	std::vector<ParticleSystem> particleSystems;
