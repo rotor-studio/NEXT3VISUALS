@@ -43,7 +43,8 @@ void main() {
 
     float edge = smoothstep(0.0, 0.35, uv.x) * smoothstep(0.0, 0.35, 1.0 - uv.x);
     float topFade = smoothstep(0.0, 0.2, uv.y);
-    float alpha = mist * edge * topFade * u_intensity;
+    float bottomFade = smoothstep(0.0, 0.2, 1.0 - uv.y);
+    float alpha = mist * edge * topFade * bottomFade * u_intensity;
     vec3 color = mix(vec3(0.72, 0.82, 0.9), vec3(0.9, 0.95, 0.98), mist);
 
     outputColor = vec4(color, alpha);

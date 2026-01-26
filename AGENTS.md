@@ -60,6 +60,9 @@ You are a senior creative coder / realtime systems engineer specialized in openF
 
 ## Working Notes (Session)
 - Particle trail flicker: avoid sampling a stale `prevTrailPos`. Keep trail positions coherent when rebounding or teleporting by resetting both `trailPos` and `prevTrailPos` at the collision point. If flicker returns with high trail values, prefer using a stable trail anchor (current trail position) and clamp large deltas.
+- Mist mode: FOAM layers can be created as vertical mist via the FOAM “M” toggle, with a separate mist shader and a global mist speed slider; mist layers should not participate in particle bounce.
+- NDI test: the test pattern uses a flat gray background and centered TTF text (no heavy grid), and the white framing border must be drawn only in the preview (not in the NDI output).
+- Performance: throttle NDI mask readback and avoid per-pixel `ofColor` calls in hot loops; skip FBO updates for disabled foam layers.
 
 ## Next Steps
 - Scaffold folders and move `src/` to match the structure above.

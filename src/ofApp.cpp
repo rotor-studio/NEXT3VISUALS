@@ -91,14 +91,14 @@ void ofApp::update(){
         }
         drawParticles();
         ofEnableAlphaBlending();
-        if (foamGroupEnabled) {
-            for (const auto &layer : foamLayers) {
-                if (layer.fbo.isAllocated() && layer.enabled) {
-                    ofSetColor(255);
-                    layer.fbo.draw(layer.position.x, layer.position.y, layer.size.x, layer.size.y);
-                }
-            }
-        }
+		if (foamGroupEnabled) {
+			for (const auto &layer : foamLayers) {
+				if (layer.fbo.isAllocated() && layer.enabled) {
+					ofSetColor(255);
+					layer.fbo.draw(layer.position.x, layer.position.y, layer.size.x, layer.size.y);
+				}
+			}
+		}
 		outputFbo.end();
 
 		if (ndiSender.SenderCreated()) {
@@ -712,7 +712,9 @@ void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY){
 		layer.position = center - layer.size * 0.5f;
 		layer.position.x = ofClamp(layer.position.x, -layer.size.x, static_cast<float>(outputWidth));
 		layer.position.y = ofClamp(layer.position.y, 0.0f, outputHeight - layer.size.y);
-		layer.fbo.allocate(static_cast<int>(layer.size.x), static_cast<int>(layer.size.y), GL_RGBA);
+		const int fboW = std::max(1, static_cast<int>(layer.size.x * foamRenderScale));
+		const int fboH = std::max(1, static_cast<int>(layer.size.y * foamRenderScale));
+		layer.fbo.allocate(fboW, fboH, GL_RGBA);
 		layer.fbo.begin();
 		ofClear(0, 0, 0, 0);
 		layer.fbo.end();
@@ -1690,7 +1692,9 @@ void ofApp::loadComposition(){
 			layer.useMist = item.value("useMist", false);
 			layer.enabled = item.value("enabled", true);
 			layer.locked = item.value("locked", false);
-			layer.fbo.allocate(static_cast<int>(layer.size.x), static_cast<int>(layer.size.y), GL_RGBA);
+			const int fboW = std::max(1, static_cast<int>(layer.size.x * foamRenderScale));
+			const int fboH = std::max(1, static_cast<int>(layer.size.y * foamRenderScale));
+			layer.fbo.allocate(fboW, fboH, GL_RGBA);
 			layer.fbo.begin();
 			ofClear(0, 0, 0, 0);
 			layer.fbo.end();
@@ -1770,7 +1774,9 @@ void ofApp::createFoamLayer(){
 	}
 	layer.timeOffset = ofRandom(1000.0f);
 	layer.useMist = foamUseMist;
-	layer.fbo.allocate(static_cast<int>(layer.size.x), static_cast<int>(layer.size.y), GL_RGBA);
+	const int fboW = std::max(1, static_cast<int>(layer.size.x * foamRenderScale));
+	const int fboH = std::max(1, static_cast<int>(layer.size.y * foamRenderScale));
+	layer.fbo.allocate(fboW, fboH, GL_RGBA);
 	layer.fbo.begin();
 	ofClear(0, 0, 0, 0);
 	layer.fbo.end();
@@ -1815,13 +1821,13 @@ void ofApp::updateFoamLayers(){
 		ofClear(0, 0, 0, 0);
 		ofShader &shader = layer.useMist ? mistShader : foamShader;
 		shader.begin();
-		shader.setUniform2f("u_resolution", layer.size.x, layer.size.y);
+		shader.setUniform2f("u_resolution", layer.fbo.getWidth(), layer.fbo.getHeight());
 		shader.setUniform1f("u_time", time + layer.timeOffset);
 		shader.setUniform1f("u_intensity", layer.fade);
 		if (layer.useMist) {
 			shader.setUniform1f("u_speed", mistSpeed);
 		}
-		ofDrawRectangle(0.0f, 0.0f, layer.size.x, layer.size.y);
+		ofDrawRectangle(0.0f, 0.0f, layer.fbo.getWidth(), layer.fbo.getHeight());
 		shader.end();
 		layer.fbo.end();
 	}

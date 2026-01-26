@@ -104,6 +104,7 @@ private:
 
 	ofShader foamShader;
 	ofShader mistShader;
+	float foamRenderScale = 0.75f;
 	std::vector<FoamLayer> foamLayers;
 	int selectedFoamIndex = -1;
 	bool draggingFoam = false;
