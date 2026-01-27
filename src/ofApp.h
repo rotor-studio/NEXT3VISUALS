@@ -45,10 +45,13 @@ private:
 	void drawParticles();
 	void updateSelectedParticleSlider(float mouseX);
 	void drawSliderLabel(const std::string &label, const ofRectangle &rect) const;
+	void startPresetTransition(int presetIndex);
+	void updatePresetTransition(float dt);
 	void saveComposition();
 	void loadComposition();
 	void saveComposition(const std::string &path);
 	void loadComposition(const std::string &path);
+	void loadComposition(const std::string &path, bool keepParticles);
 	std::string getPresetPath(int index) const;
 	bool hitTestFoamLayer(const ofVec2f &outputPos, int &hitIndex) const;
 	ofVec2f windowToOutput(const ofVec2f &windowPos) const;
@@ -122,6 +125,16 @@ private:
 	ofRectangle ndiTestRect;
 	std::array<ofRectangle, 5> presetRects;
 	int currentPresetIndex = 0;
+	ofRectangle presetTransitionRect;
+	float presetTransitionDuration = 1.0f;
+	float presetTransitionHoldRatio = 0.2f;
+	bool isPresetTransition = false;
+	float presetTransitionAlpha = 1.0f;
+	float presetTransitionPhase = 0.0f;
+	int pendingPresetIndex = 0;
+	bool pendingKeepParticles = false;
+	bool presetTransitionLoaded = false;
+	std::array<ofRectangle, 5> colorRects;
 	bool draggingFade = false;
 	bool draggingMistSpeed = false;
 	bool resetArmed = false;
@@ -146,6 +159,7 @@ private:
 		std::array<ofVec2f, kTrailPoints> trail;
 		int trailHead = 0;
 		int trailCount = 0;
+		int trailColorIndex = 0;
 		float age = 0.0f;
 		float lifespan = 1.0f;
 		float noiseSeed = 0.0f;
@@ -168,6 +182,7 @@ private:
 		float noiseStart = 0.5f;
 		bool enabled = true;
 		bool locked = false;
+		int trailColorIndex = 0;
 	};
 
 	std::vector<ParticleSystem> particleSystems;

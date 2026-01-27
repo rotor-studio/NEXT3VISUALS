@@ -85,8 +85,10 @@ void ofApp::update(){
 	}
 
 	updateNdiPlacement();
+	const float dt = ofGetLastFrameTime();
+	updatePresetTransition(dt);
 	updateFoamLayers();
-	updateParticles(ofGetLastFrameTime());
+	updateParticles(dt);
 
 	if (outputFbo.isAllocated()) {
 		outputFbo.begin();
@@ -94,18 +96,19 @@ void ofApp::update(){
 		if (showNdiTestPattern) {
 			drawNdiTestPattern();
 		}
-        if (ndiEnabled && ndiTexture.isAllocated() && ndiReceiver.ReceiverConnected()) {
-            const ofRectangle ndiRect = getNdiOutputRect();
-            ofDisableAlphaBlending();
-            ofSetColor(255, 255, 255, static_cast<unsigned char>(ndiFade * 255.0f));
-            ndiTexture.draw(ndiRect);
-        }
-        drawParticles();
-        ofEnableAlphaBlending();
+		const float compositeAlpha = presetTransitionAlpha;
+		if (ndiEnabled && ndiTexture.isAllocated() && ndiReceiver.ReceiverConnected()) {
+			const ofRectangle ndiRect = getNdiOutputRect();
+			ofDisableAlphaBlending();
+			ofSetColor(255, 255, 255, static_cast<unsigned char>(ndiFade * compositeAlpha * 255.0f));
+			ndiTexture.draw(ndiRect);
+		}
+		drawParticles();
+		ofEnableAlphaBlending();
 		if (foamGroupEnabled) {
 			for (const auto &layer : foamLayers) {
 				if (layer.fbo.isAllocated() && layer.enabled) {
-					ofSetColor(255);
+					ofSetColor(255, 255, 255, static_cast<unsigned char>(layer.fade * compositeAlpha * 255.0f));
 					layer.fbo.draw(layer.position.x, layer.position.y, layer.size.x, layer.size.y);
 				}
 			}
@@ -337,7 +340,7 @@ void ofApp::keyReleased(int key){
 }
 
 //--------------------------------------------------------------
-void ofApp::mouseMoved(int x, int y ){
+void ofApp::mouseMoved(int    x, int y ){
 
 }
 
@@ -569,18 +572,24 @@ void ofApp::mousePressed(int x, int y, int button){
 			return;
 		}
 
-		if (resetRect.inside(x, y)) {
-			const float now = ofGetElapsedTimef();
-			if (resetArmed && (now - resetArmedTime) <= 2.0f) {
-				resetComposition();
-				resetArmed = false;
-				currentPresetIndex = 0;
-			} else {
-				resetArmed = true;
-				resetArmedTime = now;
-			}
-			return;
+	if (resetRect.inside(x, y)) {
+		const float now = ofGetElapsedTimef();
+		if (resetArmed && (now - resetArmedTime) <= 2.0f) {
+			resetComposition();
+			resetArmed = false;
+			currentPresetIndex = 0;
+			isPresetTransition = false;
+			presetTransitionAlpha = 1.0f;
+			presetTransitionPhase = 0.0f;
+			presetTransitionLoaded = false;
+			pendingPresetIndex = 0;
+			pendingKeepParticles = false;
+		} else {
+			resetArmed = true;
+			resetArmedTime = now;
 		}
+		return;
+	}
 
 	for (int i = 0; i < static_cast<int>(presetRects.size()); ++i) {
 		if (presetRects[i].inside(x, y)) {
@@ -599,11 +608,25 @@ void ofApp::mousePressed(int x, int y, int button){
 				saveComposition(presetPath);
 				currentPresetIndex = i + 1;
 			} else {
-				loadComposition(presetPath);
-				currentPresetIndex = i + 1;
+				startPresetTransition(i + 1);
 			}
 			return;
 		}
+	}
+
+	for (int i = 0; i < static_cast<int>(colorRects.size()); ++i) {
+		if (colorRects[i].inside(x, y)) {
+			for (auto &system : particleSystems) {
+				system.trailColorIndex = i;
+			}
+			return;
+		}
+	}
+
+	if (presetTransitionRect.inside(x, y)) {
+		const float t = ofClamp((x - presetTransitionRect.x) / presetTransitionRect.width, 0.0f, 1.0f);
+		presetTransitionDuration = ofLerp(0.0f, 6.0f, t);
+		return;
 	}
 }
 
@@ -1195,10 +1218,59 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 		ofFill();
 	}
 
-	ofSetColor(200);
-	ofDrawBitmapString("SHIFT=SAVE  ALT=CLEAR", controlsX, presetY + presetSize + 16.0f);
+    ofSetColor(200);
+    ofDrawBitmapString("SHIFT=SAVE  ALT=CLEAR", controlsX, presetY + presetSize + 16.0f);
 
-	const float resetY = presetY + presetSize + 34.0f;
+    const float transitionTitleY = presetY + presetSize + 36.0f;
+    ofSetColor(200);
+    ofDrawBitmapString("TRANSITION", controlsX, transitionTitleY);
+    presetTransitionRect.set(controlsX, transitionTitleY + 10.0f, panelRect.width, 10.0f);
+    ofSetColor(60);
+    ofDrawRectangle(presetTransitionRect);
+    ofSetColor(180);
+    ofDrawRectangle(presetTransitionRect.x, presetTransitionRect.y,
+        presetTransitionRect.width * ofClamp(presetTransitionDuration / 6.0f, 0.0f, 1.0f),
+        presetTransitionRect.height);
+    ofNoFill();
+    ofSetColor(110);
+    ofDrawRectangle(presetTransitionRect);
+    ofFill();
+    ofSetColor(200);
+    ofDrawBitmapString(ofToString(presetTransitionDuration, 1) + "s",
+        presetTransitionRect.x + presetTransitionRect.width - 26.0f,
+        presetTransitionRect.y + presetTransitionRect.height + 12.0f);
+
+    const float colorsTitleY = presetTransitionRect.y + presetTransitionRect.height + 24.0f;
+    ofSetColor(200);
+    ofDrawBitmapString("COLORS", controlsX, colorsTitleY);
+    const float colorsY = colorsTitleY + 12.0f;
+	for (int i = 0; i < static_cast<int>(colorRects.size()); ++i) {
+		colorRects[i].set(controlsX + i * (presetSize + presetGap), colorsY, presetSize, presetSize);
+		const bool isActive = (selectedParticleIndex >= 0 &&
+			selectedParticleIndex < static_cast<int>(particleSystems.size()) &&
+			particleSystems[selectedParticleIndex].trailColorIndex == i);
+		if (isActive) {
+			ofSetColor(70, 120, 90);
+		} else {
+			ofSetColor(40);
+		}
+		if (i == 1) {
+			ofSetColor(120, 40, 40);
+		} else if (i == 2) {
+			ofSetColor(140, 110, 40);
+		} else if (i == 3) {
+			ofSetColor(50, 90, 140);
+		} else if (i == 4) {
+			ofSetColor(60, 120, 70);
+		}
+		ofDrawRectangle(colorRects[i]);
+		ofNoFill();
+		ofSetColor(110);
+		ofDrawRectangle(colorRects[i]);
+		ofFill();
+	}
+
+    const float resetY = colorsY + presetSize + 22.0f;
 	resetRect.set(controlsX, resetY, panelRect.width, 26.0f);
 	ofSetColor(40);
 	ofDrawRectangle(resetRect);
@@ -1216,6 +1288,7 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 	ofFill();
 
 	// NDI test button removed from bottom; now lives next to NDI enable toggle.
+    // Transition slider now sits between PRESETS and COLORS.
 	if (draggingParticleSlider) {
 		if (activeParticleSlider == 0) {
 			drawSliderLabel("SIZE", particleSizeRect);
@@ -1236,6 +1309,8 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 		} else if (activeParticleSlider == 8) {
 			drawSliderLabel("NOISE START", particleNoiseStartRect);
 		}
+	} else if (presetTransitionRect.inside(mx, my)) {
+		drawSliderLabel("TRANSITION", presetTransitionRect);
 	} else {
 		if (particleSizeRect.inside(mx, my)) {
 			drawSliderLabel("SIZE", particleSizeRect);
@@ -1340,6 +1415,7 @@ void ofApp::updateParticles(float dt){
 				particle.trailHead = 0;
 				particle.trailCount = 1;
 				particle.trail[0] = particle.position;
+				particle.trailColorIndex = system.trailColorIndex;
 				particle.age = 0.0f;
 				const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
 				const float travelLife = (outputHeight / std::max(system.speed, 10.0f)) * 2.5f;
@@ -1471,6 +1547,7 @@ void ofApp::updateParticles(float dt){
 				particle.trailHead = 0;
 				particle.trailCount = 1;
 				particle.trail[0] = particle.position;
+				particle.trailColorIndex = system.trailColorIndex;
 				particle.age = 0.0f;
 				const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
 				const float travelLife = (outputHeight / std::max(system.speed, 10.0f)) * 2.5f;
@@ -1494,6 +1571,17 @@ void ofApp::drawParticles(){
 		if (!system.enabled) {
 			continue;
 		}
+		ofColor trailColor(255);
+		const int colorIndex = system.trailColorIndex;
+		if (colorIndex == 1) {
+			trailColor = ofColor(200, 70, 70);
+		} else if (colorIndex == 2) {
+			trailColor = ofColor(210, 170, 80);
+		} else if (colorIndex == 3) {
+			trailColor = ofColor(90, 140, 200);
+		} else if (colorIndex == 4) {
+			trailColor = ofColor(90, 170, 110);
+		}
 		for (const auto &particle : system.particles) {
 			const float alpha = ofClamp(system.fade, 0.0f, 1.0f) * 255.0f;
 			const float trailAlpha = ofClamp(system.fade, 0.0f, 1.0f) * 255.0f;
@@ -1515,7 +1603,17 @@ void ofApp::drawParticles(){
 					const ofVec2f &p1 = particle.trail[idx1];
 					const float t = static_cast<float>(i + 1) / static_cast<float>(count);
 					const float a = trailAlpha * (1.0f - t);
-					ofSetColor(255, 255, 255, static_cast<unsigned char>(a));
+					ofColor particleTrailColor(255);
+					if (particle.trailColorIndex == 1) {
+						particleTrailColor = ofColor(200, 70, 70);
+					} else if (particle.trailColorIndex == 2) {
+						particleTrailColor = ofColor(210, 170, 80);
+					} else if (particle.trailColorIndex == 3) {
+						particleTrailColor = ofColor(90, 140, 200);
+					} else if (particle.trailColorIndex == 4) {
+						particleTrailColor = ofColor(90, 170, 110);
+					}
+					ofSetColor(particleTrailColor.r, particleTrailColor.g, particleTrailColor.b, static_cast<unsigned char>(a));
 					ofDrawLine(p0, p1);
 				}
 			}
@@ -1560,6 +1658,7 @@ void ofApp::updateSelectedParticleSlider(float mouseX){
 			particle.trailHead = 0;
 			particle.trailCount = 1;
 			particle.trail[0] = particle.position;
+			particle.trailColorIndex = system.trailColorIndex;
 			particle.age = 0.0f;
 			const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
 			const float travelLife = (outputHeight / std::max(system.speed, 10.0f)) * 2.5f;
@@ -1587,6 +1686,65 @@ void ofApp::drawSliderLabel(const std::string &label, const ofRectangle &rect) c
 	const float labelX = rect.x + rect.width + 8.0f;
 	const float labelY = rect.y + rect.height - 1.0f;
 	ofDrawBitmapString(label, labelX, labelY);
+}
+
+//--------------------------------------------------------------
+void ofApp::startPresetTransition(int presetIndex){
+	if (presetIndex <= 0 || presetIndex > static_cast<int>(presetRects.size())) {
+		return;
+	}
+	if (presetTransitionDuration <= 0.0f) {
+		loadComposition(getPresetPath(presetIndex));
+		currentPresetIndex = presetIndex;
+		presetTransitionAlpha = 1.0f;
+		isPresetTransition = false;
+		return;
+	}
+	isPresetTransition = true;
+	pendingPresetIndex = presetIndex;
+	presetTransitionAlpha = 1.0f;
+	presetTransitionPhase = 0.0f;
+	presetTransitionLoaded = false;
+	pendingKeepParticles = !particleSystems.empty();
+}
+
+//--------------------------------------------------------------
+void ofApp::updatePresetTransition(float dt){
+	if (!isPresetTransition) {
+		presetTransitionAlpha = 1.0f;
+		return;
+	}
+	const float holdDuration = std::max(0.0f, presetTransitionDuration * presetTransitionHoldRatio);
+	const float fadeDuration = std::max(0.001f, (presetTransitionDuration - holdDuration) * 0.5f);
+	const float holdHalf = holdDuration * 0.5f;
+	presetTransitionPhase += dt;
+	if (presetTransitionPhase <= fadeDuration) {
+		presetTransitionAlpha = ofClamp(1.0f - (presetTransitionPhase / fadeDuration), 0.0f, 1.0f);
+		return;
+	}
+	if (presetTransitionPhase <= fadeDuration + holdHalf) {
+		presetTransitionAlpha = 0.0f;
+		return;
+	}
+	if (!presetTransitionLoaded && pendingPresetIndex > 0) {
+		const bool keepParticles = pendingKeepParticles;
+		loadComposition(getPresetPath(pendingPresetIndex), keepParticles);
+		currentPresetIndex = pendingPresetIndex;
+		pendingPresetIndex = 0;
+		presetTransitionLoaded = true;
+	}
+	if (presetTransitionPhase <= fadeDuration + holdDuration) {
+		presetTransitionAlpha = 0.0f;
+		return;
+	}
+	const float upPhase = presetTransitionPhase - (fadeDuration + holdDuration);
+	presetTransitionAlpha = ofClamp(upPhase / fadeDuration, 0.0f, 1.0f);
+	if (upPhase >= fadeDuration) {
+		isPresetTransition = false;
+		presetTransitionPhase = 0.0f;
+		presetTransitionAlpha = 1.0f;
+		presetTransitionLoaded = false;
+	}
 }
 
 //--------------------------------------------------------------
@@ -1700,7 +1858,8 @@ void ofApp::saveComposition(const std::string &path){
 			{"noise", system.noise},
 			{"noiseStart", system.noiseStart},
 			{"enabled", system.enabled},
-			{"locked", system.locked}
+			{"locked", system.locked},
+			{"trailColorIndex", system.trailColorIndex}
 		});
 	}
 	data["particles"] = particleArray;
@@ -1716,6 +1875,10 @@ void ofApp::loadComposition(){
 }
 
 void ofApp::loadComposition(const std::string &path){
+	loadComposition(path, false);
+}
+
+void ofApp::loadComposition(const std::string &path, bool keepParticles){
 	const std::string resolvedPath = ofToDataPath(path, true);
 	if (!ofFile::doesFileExist(resolvedPath)) {
 		return;
@@ -1777,60 +1940,64 @@ void ofApp::loadComposition(const std::string &path){
 	}
 	selectedFoamIndex = foamLayers.empty() ? -1 : 0;
 
-	particleGroupEnabled = data.value("particlesEnabled", true);
-	particleSystems.clear();
-	if (data.contains("particles")) {
-		for (const auto &item : data["particles"]) {
-			ParticleSystem system;
-			if (item.contains("emitter")) {
-				system.emitterRect.set(
-					item["emitter"].value("x", outputWidth * 0.25f),
-					item["emitter"].value("y", 0.0f),
-					item["emitter"].value("w", outputWidth * 0.5f),
-					item["emitter"].value("h", 60.0f));
-			} else {
-				system.emitterRect = ofRectangle(outputWidth * 0.25f, 0.0f, outputWidth * 0.5f, 60.0f);
+	if (!keepParticles) {
+		particleGroupEnabled = data.value("particlesEnabled", true);
+		particleSystems.clear();
+		if (data.contains("particles")) {
+			for (const auto &item : data["particles"]) {
+				ParticleSystem system;
+				if (item.contains("emitter")) {
+					system.emitterRect.set(
+						item["emitter"].value("x", outputWidth * 0.25f),
+						item["emitter"].value("y", 0.0f),
+						item["emitter"].value("w", outputWidth * 0.5f),
+						item["emitter"].value("h", 60.0f));
+				} else {
+					system.emitterRect = ofRectangle(outputWidth * 0.25f, 0.0f, outputWidth * 0.5f, 60.0f);
+				}
+				system.size = item.value("size", 3.0f);
+				system.speed = item.value("speed", 220.0f);
+				system.bounce = item.value("bounce", 0.5f);
+				system.maxParticles = item.value("maxParticles", 360.0f);
+				system.lifeSpanMin = item.value("lifeSpanMin", 2.0f);
+				system.lifeSpanMax = item.value("lifeSpanMax", 8.0f);
+				system.trail = item.value("trail", 0.0f);
+				system.fade = item.value("fade", 1.0f);
+				system.noise = item.value("noise", 0.0f);
+				system.noiseStart = item.value("noiseStart", 0.5f);
+				system.enabled = item.value("enabled", true);
+				system.locked = item.value("locked", false);
+				system.trailColorIndex = item.value("trailColorIndex", 0);
+				system.spawnRate = ofMap(system.maxParticles, 240.0f, 1500.0f, 80.0f, 800.0f, true);
+				system.spawnAccumulator = 0.0f;
+				system.particles.clear();
+				const int prefill = static_cast<int>(std::min<double>(150.0, system.maxParticles * 0.3f));
+				for (int i = 0; i < prefill; ++i) {
+					Particle particle;
+					particle.position.set(
+						ofRandom(system.emitterRect.getMinX(), system.emitterRect.getMaxX()),
+						ofRandom(system.emitterRect.getMinY(), static_cast<float>(outputHeight)));
+				particle.velocity.set(ofRandom(-20.0f, 20.0f), system.speed);
+				particle.prevPos = particle.position;
+				particle.trailPos = particle.position;
+				particle.prevTrailPos = particle.position;
+				particle.trailDelta.set(0.0f, 0.0f);
+				particle.trailHead = 0;
+				particle.trailCount = 1;
+				particle.trail[0] = particle.position;
+				particle.trailColorIndex = system.trailColorIndex;
+				particle.age = 0.0f;
+				const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
+					const float travelLife = (outputHeight / std::max(system.speed, 10.0f)) * 2.5f;
+					particle.lifespan = travelLife + baseLife;
+					particle.noiseSeed = ofRandom(1000.0f);
+					system.particles.push_back(particle);
+				}
+				particleSystems.push_back(system);
 			}
-			system.size = item.value("size", 3.0f);
-			system.speed = item.value("speed", 220.0f);
-			system.bounce = item.value("bounce", 0.5f);
-			system.maxParticles = item.value("maxParticles", 360.0f);
-			system.lifeSpanMin = item.value("lifeSpanMin", 2.0f);
-			system.lifeSpanMax = item.value("lifeSpanMax", 8.0f);
-			system.trail = item.value("trail", 0.0f);
-			system.fade = item.value("fade", 1.0f);
-			system.noise = item.value("noise", 0.0f);
-			system.noiseStart = item.value("noiseStart", 0.5f);
-			system.enabled = item.value("enabled", true);
-			system.locked = item.value("locked", false);
-			system.spawnRate = ofMap(system.maxParticles, 240.0f, 1500.0f, 80.0f, 800.0f, true);
-			system.spawnAccumulator = 0.0f;
-			system.particles.clear();
-			const int prefill = static_cast<int>(std::min<double>(150.0, system.maxParticles * 0.3f));
-			for (int i = 0; i < prefill; ++i) {
-				Particle particle;
-				particle.position.set(
-					ofRandom(system.emitterRect.getMinX(), system.emitterRect.getMaxX()),
-					ofRandom(system.emitterRect.getMinY(), static_cast<float>(outputHeight)));
-			particle.velocity.set(ofRandom(-20.0f, 20.0f), system.speed);
-			particle.prevPos = particle.position;
-			particle.trailPos = particle.position;
-			particle.prevTrailPos = particle.position;
-			particle.trailDelta.set(0.0f, 0.0f);
-			particle.trailHead = 0;
-			particle.trailCount = 1;
-			particle.trail[0] = particle.position;
-			particle.age = 0.0f;
-			const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
-				const float travelLife = (outputHeight / std::max(system.speed, 10.0f)) * 2.5f;
-				particle.lifespan = travelLife + baseLife;
-				particle.noiseSeed = ofRandom(1000.0f);
-				system.particles.push_back(particle);
-			}
-			particleSystems.push_back(system);
 		}
+		selectedParticleIndex = particleSystems.empty() ? -1 : 0;
 	}
-	selectedParticleIndex = particleSystems.empty() ? -1 : 0;
 }
 //--------------------------------------------------------------
 void ofApp::createFoamLayer(){
