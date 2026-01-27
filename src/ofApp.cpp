@@ -1024,7 +1024,7 @@ void ofApp::drawNdiDropdown(){
 //--------------------------------------------------------------
 void ofApp::drawFoamControls(){
 	const ofRectangle panelRect = gui.getShape();
-	const float controlsY = ndiEnableRect.y + ndiEnableRect.height + 26.0f;
+	const float controlsY = ndiEnableRect.y + ndiEnableRect.height + 34.0f;
 	const float controlsX = panelRect.x;
 	const float buttonSize = 24.0f;
 	const float sliderWidth = panelRect.width - (buttonSize * 2.0f + 16.0f);
@@ -1109,7 +1109,7 @@ ofDrawBitmapString("FOAM", controlsX, controlsY - 7.0f);
 //--------------------------------------------------------------
 void ofApp::drawParticleControls(){
 	const ofRectangle panelRect = gui.getShape();
-	const float controlsY = foamEnableRect.y + foamEnableRect.height + 26.0f;
+	const float controlsY = foamEnableRect.y + foamEnableRect.height + 34.0f;
 	const float controlsX = panelRect.x;
 	const float buttonSize = 24.0f;
 	const float sliderWidth = panelRect.width - (buttonSize * 2.0f + 16.0f);
@@ -1253,9 +1253,10 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 	}
 
     ofSetColor(200);
-    ofDrawBitmapString("SHIFT=SAVE  ALT=CLEAR", controlsX, presetY + presetSize + 16.0f);
+    const float presetHintY = presetY + presetSize + 22.0f;
+    ofDrawBitmapString("SHIFT=SAVE  ALT=CLEAR", controlsX, presetHintY);
 
-    const float transitionTitleY = presetY + presetSize + 36.0f;
+    const float transitionTitleY = presetHintY + 20.0f;
     ofSetColor(200);
     ofDrawBitmapString("TRANSITION", controlsX, transitionTitleY);
     presetTransitionRect.set(controlsX, transitionTitleY + 10.0f, panelRect.width, 10.0f);
@@ -1274,52 +1275,53 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
         presetTransitionRect.x + presetTransitionRect.width - 26.0f,
         presetTransitionRect.y + presetTransitionRect.height + 12.0f);
 
-    const float colorsTitleY = presetTransitionRect.y + presetTransitionRect.height + 24.0f;
+    const float resetY = presetTransitionRect.y + presetTransitionRect.height + 18.0f;
+    const float resetWidth = panelRect.width * 0.7f;
+    resetRect.set(controlsX, resetY, resetWidth, 24.0f);
+    ofSetColor(40);
+    ofDrawRectangle(resetRect);
+    ofSetColor(255);
+    if (resetArmed) {
+        ofSetColor(180, 30, 30);
+        ofDrawBitmapString("CONFIRM", resetRect.x + 6.0f, resetRect.getCenter().y + 5.0f);
+    } else {
+        ofSetColor(255);
+        ofDrawBitmapString("RESET COMP", resetRect.x + 6.0f, resetRect.getCenter().y + 5.0f);
+    }
+    ofNoFill();
+    ofSetColor(110);
+    ofDrawRectangle(resetRect);
+    ofFill();
+
+    const float colorsTitleY = resetRect.y + resetRect.height + 24.0f;
     ofSetColor(200);
     ofDrawBitmapString("COLORS", controlsX, colorsTitleY);
     const float colorsY = colorsTitleY + 12.0f;
-	for (int i = 0; i < static_cast<int>(colorRects.size()); ++i) {
-		colorRects[i].set(controlsX + i * (presetSize + presetGap), colorsY, presetSize, presetSize);
-		const bool isActive = (selectedParticleIndex >= 0 &&
-			selectedParticleIndex < static_cast<int>(particleSystems.size()) &&
-			particleSystems[selectedParticleIndex].trailColorIndex == i);
-		if (isActive) {
-			ofSetColor(70, 120, 90);
-		} else {
-			ofSetColor(40);
-		}
-		if (i == 1) {
-			ofSetColor(120, 40, 40);
-		} else if (i == 2) {
-			ofSetColor(140, 110, 40);
-		} else if (i == 3) {
-			ofSetColor(50, 90, 140);
-		} else if (i == 4) {
-			ofSetColor(60, 120, 70);
-		}
-		ofDrawRectangle(colorRects[i]);
-		ofNoFill();
-		ofSetColor(110);
-		ofDrawRectangle(colorRects[i]);
-		ofFill();
-	}
-
-    const float resetY = colorsY + presetSize + 22.0f;
-	resetRect.set(controlsX, resetY, panelRect.width, 26.0f);
-	ofSetColor(40);
-	ofDrawRectangle(resetRect);
-	ofSetColor(255);
-	if (resetArmed) {
-		ofSetColor(180, 30, 30);
-		ofDrawBitmapString("CONFIRM", resetRect.x + 6.0f, resetRect.getCenter().y + 5.0f);
-	} else {
-		ofSetColor(255);
-		ofDrawBitmapString("RESET COMP", resetRect.x + 6.0f, resetRect.getCenter().y + 5.0f);
-	}
-	ofNoFill();
-	ofSetColor(110);
-	ofDrawRectangle(resetRect);
-	ofFill();
+    for (int i = 0; i < static_cast<int>(colorRects.size()); ++i) {
+        colorRects[i].set(controlsX + i * (presetSize + presetGap), colorsY, presetSize, presetSize);
+        const bool isActive = (selectedParticleIndex >= 0 &&
+            selectedParticleIndex < static_cast<int>(particleSystems.size()) &&
+            particleSystems[selectedParticleIndex].trailColorIndex == i);
+        if (isActive) {
+            ofSetColor(70, 120, 90);
+        } else {
+            ofSetColor(40);
+        }
+        if (i == 1) {
+            ofSetColor(120, 40, 40);
+        } else if (i == 2) {
+            ofSetColor(140, 110, 40);
+        } else if (i == 3) {
+            ofSetColor(50, 90, 140);
+        } else if (i == 4) {
+            ofSetColor(60, 120, 70);
+        }
+        ofDrawRectangle(colorRects[i]);
+        ofNoFill();
+        ofSetColor(110);
+        ofDrawRectangle(colorRects[i]);
+        ofFill();
+    }
 
 	// NDI test button removed from bottom; now lives next to NDI enable toggle.
     // Transition slider now sits between PRESETS and COLORS.

@@ -63,6 +63,10 @@ You are a senior creative coder / realtime systems engineer specialized in openF
 - Mist mode: FOAM layers can be created as vertical mist via the FOAM “M” toggle, with a separate mist shader and a global mist speed slider; mist layers should not participate in particle bounce.
 - NDI test: the test pattern uses a flat gray background and centered TTF text (no heavy grid), and the white framing border must be drawn only in the preview (not in the NDI output).
 - Performance: throttle NDI mask readback and avoid per-pixel `ofColor` calls in hot loops; skip FBO updates for disabled foam layers.
+- Presets: 5 preset buttons (click=load, shift+click=save, alt+click=clear), with a global transition slider (fade out → black → load → black → fade in). Presets do not alter global NDI selection or transition time.
+- NDI selection: store desired sender name and attempt reconnect when sender appears; apply on general load even if sender list is empty.
+- Particles: global spawn toggle (green/red) should stop new spawns immediately and never be saved/loaded; existing particles finish naturally.
+- UI spacing: keep generous vertical spacing between NDI/FOAM/PARTICLES and between preset controls to avoid overlap.
 
 ## Next Steps
 - Scaffold folders and move `src/` to match the structure above.
