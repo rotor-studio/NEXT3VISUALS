@@ -1506,9 +1506,12 @@ void ofApp::updateParticles(float dt){
 			}
 		}
 
+		const bool trailEnabled = system.trail > 0.0f;
 		for (auto &particle : system.particles) {
 			particle.prevPos = particle.position;
-			particle.prevTrailPos = particle.trailPos;
+			if (trailEnabled) {
+				particle.prevTrailPos = particle.trailPos;
+			}
 			particle.velocity.y += system.speed * 0.4f * dt;
 			const float noiseStartY = system.noiseStart * outputHeight;
 			if (particle.position.y >= noiseStartY) {
@@ -1521,27 +1524,29 @@ void ofApp::updateParticles(float dt){
 			particle.position += particle.velocity * dt;
 			particle.age += dt;
 
-			const float jump = particle.position.distance(particle.prevPos);
-			if (jump > 80.0f) {
-				particle.trailPos = particle.position;
-				particle.prevTrailPos = particle.position;
-				particle.trailDelta.set(0.0f, 0.0f);
-			} else {
-				particle.trailPos = particle.prevPos;
-				particle.prevTrailPos = particle.trailPos;
-				const ofVec2f frameDelta = particle.position - particle.prevPos;
-				particle.trailDelta = particle.trailDelta * 0.7f + frameDelta * 0.3f;
-			}
+			if (trailEnabled) {
+				const float jump = particle.position.distance(particle.prevPos);
+				if (jump > 80.0f) {
+					particle.trailPos = particle.position;
+					particle.prevTrailPos = particle.position;
+					particle.trailDelta.set(0.0f, 0.0f);
+				} else {
+					particle.trailPos = particle.prevPos;
+					particle.prevTrailPos = particle.trailPos;
+					const ofVec2f frameDelta = particle.position - particle.prevPos;
+					particle.trailDelta = particle.trailDelta * 0.7f + frameDelta * 0.3f;
+				}
 
-			if (jump > 80.0f || particle.trailCount == 0) {
-				particle.trailHead = 0;
-				particle.trailCount = 1;
-				particle.trail[0] = particle.position;
-			} else {
-				particle.trailHead = (particle.trailHead + 1) % Particle::kTrailPoints;
-				particle.trail[particle.trailHead] = particle.position;
-				if (particle.trailCount < Particle::kTrailPoints) {
-					particle.trailCount++;
+				if (jump > 80.0f || particle.trailCount == 0) {
+					particle.trailHead = 0;
+					particle.trailCount = 1;
+					particle.trail[0] = particle.position;
+				} else {
+					particle.trailHead = (particle.trailHead + 1) % Particle::kTrailPoints;
+					particle.trail[particle.trailHead] = particle.position;
+					if (particle.trailCount < Particle::kTrailPoints) {
+						particle.trailCount++;
+					}
 				}
 			}
 
@@ -1609,12 +1614,14 @@ void ofApp::updateParticles(float dt){
 					const float speedMag = particle.velocity.length();
 					const float speedFactor = ofClamp(ofMap(speedMag, 40.0f, 600.0f, 0.5f, 1.5f, true), 0.5f, 1.5f) * motionFactor;
 					particle.position = particle.prevPos;
-					particle.trailPos = particle.prevPos;
-					particle.prevTrailPos = particle.prevPos;
-					particle.trailDelta.set(0.0f, 0.0f);
-					particle.trailHead = 0;
-					particle.trailCount = 1;
-					particle.trail[0] = particle.position;
+					if (trailEnabled) {
+						particle.trailPos = particle.prevPos;
+						particle.prevTrailPos = particle.prevPos;
+						particle.trailDelta.set(0.0f, 0.0f);
+						particle.trailHead = 0;
+						particle.trailCount = 1;
+						particle.trail[0] = particle.position;
+					}
 					particle.velocity.y *= -ofRandom(0.3f, 0.9f) * system.bounce * speedFactor;
 					particle.velocity.x += ofRandom(-160.0f, 160.0f) * system.bounce * speedFactor;
 					particle.age += particle.lifespan * 0.08f;
@@ -1631,12 +1638,14 @@ void ofApp::updateParticles(float dt){
 					ofRandom(system.emitterRect.getMinY(), system.emitterRect.getMaxY()));
 				particle.velocity.set(ofRandom(-20.0f, 20.0f), system.speed);
 				particle.prevPos = particle.position;
-				particle.trailPos = particle.position;
-				particle.prevTrailPos = particle.position;
-				particle.trailDelta.set(0.0f, 0.0f);
-				particle.trailHead = 0;
-				particle.trailCount = 1;
-				particle.trail[0] = particle.position;
+				if (trailEnabled) {
+					particle.trailPos = particle.position;
+					particle.prevTrailPos = particle.position;
+					particle.trailDelta.set(0.0f, 0.0f);
+					particle.trailHead = 0;
+					particle.trailCount = 1;
+					particle.trail[0] = particle.position;
+				}
 				particle.trailColorIndex = system.trailColorIndex;
 				particle.age = 0.0f;
 				const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
@@ -1659,37 +1668,49 @@ void ofApp::drawParticles(){
 		return;
 	}
 
+	auto colorForIndex = [](int index) -> ofColor {
+		if (index == 1) {
+			return ofColor(200, 70, 70);
+		}
+		if (index == 2) {
+			return ofColor(210, 170, 80);
+		}
+		if (index == 3) {
+			return ofColor(90, 140, 200);
+		}
+		if (index == 4) {
+			return ofColor(90, 170, 110);
+		}
+		return ofColor(255);
+	};
+
 	ofPushStyle();
 	ofEnableAlphaBlending();
 	for (const auto &system : particleSystems) {
 		if (!system.enabled) {
 			continue;
 		}
-		ofColor trailColor(255);
-		const int colorIndex = system.trailColorIndex;
-		if (colorIndex == 1) {
-			trailColor = ofColor(200, 70, 70);
-		} else if (colorIndex == 2) {
-			trailColor = ofColor(210, 170, 80);
-		} else if (colorIndex == 3) {
-			trailColor = ofColor(90, 140, 200);
-		} else if (colorIndex == 4) {
-			trailColor = ofColor(90, 170, 110);
+		const float alpha = ofClamp(system.fade, 0.0f, 1.0f) * 255.0f;
+		const float trailAlpha = alpha;
+		const bool trailEnabled = system.trail > 0.0f;
+		const int maxCount = Particle::kTrailPoints;
+		const int desiredCount = trailEnabled
+			? static_cast<int>(ofMap(system.trail, 0.0f, 3.0f, 2.0f, static_cast<float>(maxCount), true))
+			: 0;
+
+		ofMesh trailMesh;
+		trailMesh.setMode(OF_PRIMITIVE_LINES);
+		if (trailEnabled) {
+			ofSetLineWidth(system.size * 2.0f);
 		}
 		for (const auto &particle : system.particles) {
-			const float alpha = ofClamp(system.fade, 0.0f, 1.0f) * 255.0f;
-			const float trailAlpha = ofClamp(system.fade, 0.0f, 1.0f) * 255.0f;
 			ofSetColor(255, 255, 255, static_cast<unsigned char>(alpha));
 			ofDrawCircle(particle.position.x, particle.position.y, system.size);
-			if (system.trail > 0.0f) {
-				const int maxCount = Particle::kTrailPoints;
-				const int desiredCount = static_cast<int>(ofMap(system.trail, 0.0f, 3.0f, 2.0f, static_cast<float>(maxCount), true));
+			if (trailEnabled) {
 				const int count = std::min(particle.trailCount, desiredCount);
 				if (count < 2) {
 					continue;
 				}
-				const float width = system.size * 2.0f;
-				ofSetLineWidth(width);
 				for (int i = 0; i < count - 1; ++i) {
 					const int idx0 = (particle.trailHead - i + maxCount) % maxCount;
 					const int idx1 = (particle.trailHead - i - 1 + maxCount) % maxCount;
@@ -1697,20 +1718,21 @@ void ofApp::drawParticles(){
 					const ofVec2f &p1 = particle.trail[idx1];
 					const float t = static_cast<float>(i + 1) / static_cast<float>(count);
 					const float a = trailAlpha * (1.0f - t);
-					ofColor particleTrailColor(255);
-					if (particle.trailColorIndex == 1) {
-						particleTrailColor = ofColor(200, 70, 70);
-					} else if (particle.trailColorIndex == 2) {
-						particleTrailColor = ofColor(210, 170, 80);
-					} else if (particle.trailColorIndex == 3) {
-						particleTrailColor = ofColor(90, 140, 200);
-					} else if (particle.trailColorIndex == 4) {
-						particleTrailColor = ofColor(90, 170, 110);
-					}
-					ofSetColor(particleTrailColor.r, particleTrailColor.g, particleTrailColor.b, static_cast<unsigned char>(a));
-					ofDrawLine(p0, p1);
+					const ofColor particleTrailColor = colorForIndex(particle.trailColorIndex);
+					const ofFloatColor meshColor(
+						particleTrailColor.r / 255.0f,
+						particleTrailColor.g / 255.0f,
+						particleTrailColor.b / 255.0f,
+						a / 255.0f);
+					trailMesh.addVertex(ofVec3f(p0.x, p0.y, 0.0f));
+					trailMesh.addColor(meshColor);
+					trailMesh.addVertex(ofVec3f(p1.x, p1.y, 0.0f));
+					trailMesh.addColor(meshColor);
 				}
 			}
+		}
+		if (trailEnabled && trailMesh.getNumVertices() > 0) {
+			trailMesh.draw();
 		}
 	}
 	ofDisableAlphaBlending();
