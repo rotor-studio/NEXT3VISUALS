@@ -5,6 +5,7 @@
 #include "ofxNDIreceiver.h"
 #include "ofxNDIsender.h"
 #include <array>
+#include <algorithm>
 
 class ofApp : public ofBaseApp {
 
@@ -50,8 +51,9 @@ private:
 	void saveComposition();
 	void loadComposition();
 	void saveComposition(const std::string &path);
+	void saveComposition(const std::string &path, bool includeGlobals);
 	void loadComposition(const std::string &path);
-	void loadComposition(const std::string &path, bool keepParticles);
+	void loadComposition(const std::string &path, bool keepParticles, bool applyGlobals);
 	std::string getPresetPath(int index) const;
 	bool hitTestFoamLayer(const ofVec2f &outputPos, int &hitIndex) const;
 	ofVec2f windowToOutput(const ofVec2f &windowPos) const;
@@ -78,6 +80,7 @@ private:
 	int outputHeight = 3840;
 	std::vector<std::string> ndiSenders;
 	int selectedSenderIndex = -1;
+	std::string ndiDesiredSenderName;
 	float lastSenderScanTime = 0.0f;
 	float senderScanInterval = 2.0f;
 
@@ -204,9 +207,11 @@ private:
 	ofRectangle particleNoiseRect;
 	ofRectangle particleNoiseStartRect;
 	ofRectangle particleEnableRect;
+	ofRectangle particleSpawnRect;
 	ofRectangle ndiEnableRect;
 	ofRectangle ndiFadeRect;
 	bool particleGroupEnabled = true;
+	bool particleSpawnEnabled = true;
 	bool draggingNdiFade = false;
 
 	enum class LayerSelection {

@@ -499,6 +499,16 @@ void ofApp::mousePressed(int x, int y, int button){
 			return;
 		}
 
+		if (particleSpawnRect.inside(x, y)) {
+			particleSpawnEnabled = !particleSpawnEnabled;
+			if (!particleSpawnEnabled) {
+				for (auto &system : particleSystems) {
+					system.spawnAccumulator = 0.0f;
+				}
+			}
+			return;
+		}
+
 		if (addParticleRect.inside(x, y)) {
 			createParticleSystem();
 			return;
@@ -605,7 +615,7 @@ void ofApp::mousePressed(int x, int y, int button){
 					currentPresetIndex = 0;
 				}
 			} else if (savePreset) {
-				saveComposition(presetPath);
+				saveComposition(presetPath, false);
 				currentPresetIndex = i + 1;
 			} else {
 				startPresetTransition(i + 1);
@@ -828,6 +838,15 @@ void ofApp::refreshNdiSenders(){
 	ndiSenders = ndiReceiver.GetSenderList();
 	ndiSenders.insert(ndiSenders.begin(), "<none>");
 
+	if (!ndiDesiredSenderName.empty()) {
+		for (int i = 1; i < static_cast<int>(ndiSenders.size()); ++i) {
+			if (ndiSenders[i] == ndiDesiredSenderName) {
+				selectSenderIndex(i);
+				break;
+			}
+		}
+	}
+
 	if (senderCount <= 0) {
 		selectedSenderIndex = 0;
 		ndiReceiver.ReleaseReceiver();
@@ -864,6 +883,7 @@ void ofApp::selectSenderIndex(int index){
 
 	if (selectedSenderIndex == 0) {
 		ndiReceiver.ReleaseReceiver();
+		ndiDesiredSenderName.clear();
 		return;
 	}
 
@@ -872,6 +892,7 @@ void ofApp::selectSenderIndex(int index){
 		ndiReceiver.ReleaseReceiver();
 		return;
 	}
+	ndiDesiredSenderName = ndiSenders[selectedSenderIndex];
 	ndiReceiver.ReleaseReceiver();
 	ndiReceiver.SetSenderName(ndiSenders[selectedSenderIndex]);
 	ndiReceiver.CreateReceiver(-1);
@@ -1097,6 +1118,7 @@ void ofApp::drawParticleControls(){
 addParticleRect.set(controlsX, controlsY, buttonSize, buttonSize);
 deleteParticleRect.set(addParticleRect.x + buttonSize + 8.0f, controlsY, buttonSize, buttonSize);
 	particleEnableRect.set(controlsX, controlsY + buttonSize + 8.0f, buttonSize, buttonSize);
+	particleSpawnRect.set(particleEnableRect.x + buttonSize + 6.0f, particleEnableRect.y, buttonSize, buttonSize);
 
 	const float sliderX = deleteParticleRect.x + buttonSize + 8.0f;
 	particleSizeRect.set(sliderX, controlsY + 2.0f, sliderWidth, sliderHeight);
@@ -1139,12 +1161,23 @@ ofSetColor(40);
 ofDrawRectangle(addParticleRect);
 ofDrawRectangle(deleteParticleRect);
 ofDrawRectangle(particleEnableRect);
+if (particleSpawnEnabled) {
+	ofSetColor(50, 120, 70);
+} else {
+	ofSetColor(140, 50, 50);
+}
+ofDrawRectangle(particleSpawnRect);
 
 ofSetColor(255);
 ofDrawBitmapString("+", addParticleRect.getCenter().x - 3.0f, addParticleRect.getCenter().y + 5.0f);
 ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleRect.getCenter().y + 5.0f);
 	if (particleGroupEnabled) {
 		ofDrawBitmapString("X", particleEnableRect.getCenter().x - 3.0f, particleEnableRect.getCenter().y + 5.0f);
+	}
+	if (particleSpawnEnabled) {
+		ofDrawBitmapString("S", particleSpawnRect.getCenter().x - 3.0f, particleSpawnRect.getCenter().y + 5.0f);
+	} else {
+		ofDrawBitmapString("S", particleSpawnRect.getCenter().x - 3.0f, particleSpawnRect.getCenter().y + 5.0f);
 	}
 
 	ofSetColor(60);
@@ -1173,6 +1206,7 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 	ofDrawRectangle(addParticleRect);
 	ofDrawRectangle(deleteParticleRect);
 	ofDrawRectangle(particleEnableRect);
+	ofDrawRectangle(particleSpawnRect);
 	ofDrawRectangle(particleSizeRect);
 	ofDrawRectangle(particleSpeedRect);
 	ofDrawRectangle(particleBounceRect);
@@ -1390,38 +1424,46 @@ void ofApp::updateParticles(float dt){
 		if (!system.enabled) {
 			continue;
 		}
-		system.spawnAccumulator += system.spawnRate * dt;
+		if (particleSpawnEnabled) {
+		if (particleSpawnEnabled) {
+			system.spawnAccumulator += system.spawnRate * dt;
+		} else {
+			system.spawnAccumulator = 0.0f;
+		}
+		}
 		if (system.spawnAccumulator > system.maxParticles) {
 			system.spawnAccumulator = system.maxParticles;
 		}
-		const int spawnCount = static_cast<int>(system.spawnAccumulator);
-		const size_t maxParticles = static_cast<size_t>(system.maxParticles);
-		const size_t available = (system.particles.size() < maxParticles)
-			? (maxParticles - system.particles.size())
-			: 0;
-		const int spawnNow = static_cast<int>(std::min<size_t>(available, static_cast<size_t>(std::max(0, spawnCount))));
-		if (spawnNow > 0) {
-			system.spawnAccumulator -= spawnNow;
-			for (int i = 0; i < spawnNow; ++i) {
-				Particle particle;
-				particle.position.set(
-					ofRandom(system.emitterRect.getMinX(), system.emitterRect.getMaxX()),
-					ofRandom(system.emitterRect.getMinY(), system.emitterRect.getMaxY()));
-				particle.velocity.set(ofRandom(-20.0f, 20.0f), system.speed);
-				particle.prevPos = particle.position;
-				particle.trailPos = particle.position;
-				particle.prevTrailPos = particle.position;
-				particle.trailDelta.set(0.0f, 0.0f);
-				particle.trailHead = 0;
-				particle.trailCount = 1;
-				particle.trail[0] = particle.position;
-				particle.trailColorIndex = system.trailColorIndex;
-				particle.age = 0.0f;
-				const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
-				const float travelLife = (outputHeight / std::max(system.speed, 10.0f)) * 2.5f;
-				particle.lifespan = travelLife + baseLife;
-				particle.noiseSeed = ofRandom(1000.0f);
-				system.particles.push_back(particle);
+		if (particleSpawnEnabled) {
+			const int spawnCount = static_cast<int>(system.spawnAccumulator);
+			const size_t maxParticles = static_cast<size_t>(system.maxParticles);
+			const size_t available = (system.particles.size() < maxParticles)
+				? (maxParticles - system.particles.size())
+				: 0;
+			const int spawnNow = static_cast<int>(std::min<size_t>(available, static_cast<size_t>(std::max(0, spawnCount))));
+			if (spawnNow > 0) {
+				system.spawnAccumulator -= spawnNow;
+				for (int i = 0; i < spawnNow; ++i) {
+					Particle particle;
+					particle.position.set(
+						ofRandom(system.emitterRect.getMinX(), system.emitterRect.getMaxX()),
+						ofRandom(system.emitterRect.getMinY(), system.emitterRect.getMaxY()));
+					particle.velocity.set(ofRandom(-20.0f, 20.0f), system.speed);
+					particle.prevPos = particle.position;
+					particle.trailPos = particle.position;
+					particle.prevTrailPos = particle.position;
+					particle.trailDelta.set(0.0f, 0.0f);
+					particle.trailHead = 0;
+					particle.trailCount = 1;
+					particle.trail[0] = particle.position;
+					particle.trailColorIndex = system.trailColorIndex;
+					particle.age = 0.0f;
+					const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
+					const float travelLife = (outputHeight / std::max(system.speed, 10.0f)) * 2.5f;
+					particle.lifespan = travelLife + baseLife;
+					particle.noiseSeed = ofRandom(1000.0f);
+					system.particles.push_back(particle);
+				}
 			}
 		}
 
@@ -1536,6 +1578,10 @@ void ofApp::updateParticles(float dt){
 			}
 
 			if (particle.position.y > outputHeight + 20.0f || particle.age >= particle.lifespan) {
+				if (!particleSpawnEnabled) {
+					particle.age = particle.lifespan + 1.0f;
+					continue;
+				}
 				particle.position.set(
 					ofRandom(system.emitterRect.getMinX(), system.emitterRect.getMaxX()),
 					ofRandom(system.emitterRect.getMinY(), system.emitterRect.getMaxY()));
@@ -1556,6 +1602,10 @@ void ofApp::updateParticles(float dt){
 			}
 		}
 
+		if (!particleSpawnEnabled) {
+			system.particles.erase(std::remove_if(system.particles.begin(), system.particles.end(),
+				[](const Particle &p) { return p.age > p.lifespan; }), system.particles.end());
+		}
 	}
 }
 
@@ -1644,27 +1694,29 @@ void ofApp::updateSelectedParticleSlider(float mouseX){
 		system.maxParticles = ofLerp(240.0f, 1500.0f, t);
 		system.spawnRate = ofLerp(80.0f, 800.0f, t);
 		system.spawnAccumulator = std::min(system.spawnAccumulator + system.maxParticles * 0.5f, system.maxParticles);
-		const int addCount = static_cast<int>(std::min<double>(200.0, system.maxParticles - system.particles.size()));
-		for (int i = 0; i < addCount; ++i) {
-			Particle particle;
-			particle.position.set(
-				ofRandom(system.emitterRect.getMinX(), system.emitterRect.getMaxX()),
-				ofRandom(system.emitterRect.getMinY(), static_cast<float>(outputHeight)));
-			particle.velocity.set(ofRandom(-20.0f, 20.0f), system.speed);
-			particle.prevPos = particle.position;
-			particle.trailPos = particle.position;
-			particle.prevTrailPos = particle.position;
-			particle.trailDelta.set(0.0f, 0.0f);
-			particle.trailHead = 0;
-			particle.trailCount = 1;
-			particle.trail[0] = particle.position;
-			particle.trailColorIndex = system.trailColorIndex;
-			particle.age = 0.0f;
-			const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
-			const float travelLife = (outputHeight / std::max(system.speed, 10.0f)) * 2.5f;
-			particle.lifespan = travelLife + baseLife;
-			particle.noiseSeed = ofRandom(1000.0f);
-			system.particles.push_back(particle);
+		if (particleSpawnEnabled) {
+			const int addCount = static_cast<int>(std::min<double>(200.0, system.maxParticles - system.particles.size()));
+			for (int i = 0; i < addCount; ++i) {
+				Particle particle;
+				particle.position.set(
+					ofRandom(system.emitterRect.getMinX(), system.emitterRect.getMaxX()),
+					ofRandom(system.emitterRect.getMinY(), static_cast<float>(outputHeight)));
+				particle.velocity.set(ofRandom(-20.0f, 20.0f), system.speed);
+				particle.prevPos = particle.position;
+				particle.trailPos = particle.position;
+				particle.prevTrailPos = particle.position;
+				particle.trailDelta.set(0.0f, 0.0f);
+				particle.trailHead = 0;
+				particle.trailCount = 1;
+				particle.trail[0] = particle.position;
+				particle.trailColorIndex = system.trailColorIndex;
+				particle.age = 0.0f;
+				const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
+				const float travelLife = (outputHeight / std::max(system.speed, 10.0f)) * 2.5f;
+				particle.lifespan = travelLife + baseLife;
+				particle.noiseSeed = ofRandom(1000.0f);
+				system.particles.push_back(particle);
+			}
 		}
 	} else if (activeParticleSlider == 4) {
 		system.lifeSpanMin = ofLerp(0.5f, 6.0f, t);
@@ -1728,7 +1780,7 @@ void ofApp::updatePresetTransition(float dt){
 	}
 	if (!presetTransitionLoaded && pendingPresetIndex > 0) {
 		const bool keepParticles = pendingKeepParticles;
-		loadComposition(getPresetPath(pendingPresetIndex), keepParticles);
+		loadComposition(getPresetPath(pendingPresetIndex), keepParticles, false);
 		currentPresetIndex = pendingPresetIndex;
 		pendingPresetIndex = 0;
 		presetTransitionLoaded = true;
@@ -1796,10 +1848,14 @@ void ofApp::resetComposition(){
 
 //--------------------------------------------------------------
 void ofApp::saveComposition(){
-	saveComposition(compositionPath);
+	saveComposition(compositionPath, true);
 }
 
 void ofApp::saveComposition(const std::string &path){
+	saveComposition(path, false);
+}
+
+void ofApp::saveComposition(const std::string &path, bool includeGlobals){
 	ofDirectory presetsDir(ofToDataPath("presets", true));
 	if (!presetsDir.exists()) {
 		presetsDir.create(true);
@@ -1810,12 +1866,16 @@ void ofApp::saveComposition(const std::string &path){
 	data["output"]["width"] = outputWidth;
 	data["output"]["height"] = outputHeight;
 
-	std::string senderName;
-	if (selectedSenderIndex > 0 && selectedSenderIndex < static_cast<int>(ndiSenders.size())) {
-		senderName = ndiSenders[selectedSenderIndex];
+	if (includeGlobals) {
+		std::string senderName = ndiDesiredSenderName;
+		if (senderName.empty() && selectedSenderIndex > 0 &&
+			selectedSenderIndex < static_cast<int>(ndiSenders.size())) {
+			senderName = ndiSenders[selectedSenderIndex];
+		}
+		data["ndi"]["sender"] = senderName;
+		data["ndi"]["senderIndex"] = selectedSenderIndex;
+		data["presetTransitionDuration"] = presetTransitionDuration;
 	}
-	data["ndi"]["sender"] = senderName;
-	data["ndi"]["senderIndex"] = selectedSenderIndex;
 	data["ndi"]["enabled"] = ndiEnabled;
 	data["ndi"]["fade"] = ndiFade;
 	data["foamEnabled"] = foamGroupEnabled;
@@ -1858,8 +1918,7 @@ void ofApp::saveComposition(const std::string &path){
 			{"noise", system.noise},
 			{"noiseStart", system.noiseStart},
 			{"enabled", system.enabled},
-			{"locked", system.locked},
-			{"trailColorIndex", system.trailColorIndex}
+			{"locked", system.locked}
 		});
 	}
 	data["particles"] = particleArray;
@@ -1870,15 +1929,15 @@ void ofApp::saveComposition(const std::string &path){
 
 //--------------------------------------------------------------
 void ofApp::loadComposition(){
-	loadComposition(compositionPath);
+	loadComposition(compositionPath, false, true);
 	currentPresetIndex = 0;
 }
 
 void ofApp::loadComposition(const std::string &path){
-	loadComposition(path, false);
+	loadComposition(path, false, false);
 }
 
-void ofApp::loadComposition(const std::string &path, bool keepParticles){
+void ofApp::loadComposition(const std::string &path, bool keepParticles, bool applyGlobals){
 	const std::string resolvedPath = ofToDataPath(path, true);
 	if (!ofFile::doesFileExist(resolvedPath)) {
 		return;
@@ -1889,24 +1948,28 @@ void ofApp::loadComposition(const std::string &path, bool keepParticles){
 		return;
 	}
 
-	refreshNdiSenders();
-	const std::string senderName = data.value("ndi", ofJson::object()).value("sender", "");
-	int senderIndex = 0;
-	if (!senderName.empty()) {
-		for (int i = 0; i < static_cast<int>(ndiSenders.size()); ++i) {
-			if (ndiSenders[i] == senderName) {
-				senderIndex = i;
-				break;
+	if (applyGlobals) {
+		refreshNdiSenders();
+		const std::string senderName = data.value("ndi", ofJson::object()).value("sender", "");
+		int senderIndex = 0;
+		ndiDesiredSenderName = senderName;
+		if (!senderName.empty()) {
+			for (int i = 0; i < static_cast<int>(ndiSenders.size()); ++i) {
+				if (ndiSenders[i] == senderName) {
+					senderIndex = i;
+					break;
+				}
 			}
 		}
-	}
-	if (senderIndex == 0 && data["ndi"].contains("senderIndex")) {
-		const int savedIndex = data["ndi"].value("senderIndex", 0);
-		if (savedIndex >= 0 && savedIndex < static_cast<int>(ndiSenders.size())) {
-			senderIndex = savedIndex;
+		if (senderIndex == 0 && data["ndi"].contains("senderIndex")) {
+			const int savedIndex = data["ndi"].value("senderIndex", 0);
+			if (savedIndex >= 0 && savedIndex < static_cast<int>(ndiSenders.size())) {
+				senderIndex = savedIndex;
+			}
 		}
+		selectSenderIndex(senderIndex);
+		presetTransitionDuration = data.value("presetTransitionDuration", presetTransitionDuration);
 	}
-	selectSenderIndex(senderIndex);
 	ndiEnabled = data.value("ndi", ofJson::object()).value("enabled", true);
 	ndiFade = data.value("ndi", ofJson::object()).value("fade", 1.0f);
 
@@ -1941,7 +2004,7 @@ void ofApp::loadComposition(const std::string &path, bool keepParticles){
 	selectedFoamIndex = foamLayers.empty() ? -1 : 0;
 
 	if (!keepParticles) {
-		particleGroupEnabled = data.value("particlesEnabled", true);
+	particleGroupEnabled = data.value("particlesEnabled", true);
 		particleSystems.clear();
 		if (data.contains("particles")) {
 			for (const auto &item : data["particles"]) {
@@ -1966,14 +2029,15 @@ void ofApp::loadComposition(const std::string &path, bool keepParticles){
 				system.noise = item.value("noise", 0.0f);
 				system.noiseStart = item.value("noiseStart", 0.5f);
 				system.enabled = item.value("enabled", true);
-				system.locked = item.value("locked", false);
-				system.trailColorIndex = item.value("trailColorIndex", 0);
+			system.locked = item.value("locked", false);
 				system.spawnRate = ofMap(system.maxParticles, 240.0f, 1500.0f, 80.0f, 800.0f, true);
 				system.spawnAccumulator = 0.0f;
 				system.particles.clear();
-				const int prefill = static_cast<int>(std::min<double>(150.0, system.maxParticles * 0.3f));
-				for (int i = 0; i < prefill; ++i) {
-					Particle particle;
+			const int prefill = particleSpawnEnabled
+				? static_cast<int>(std::min<double>(150.0, system.maxParticles * 0.3f))
+				: 0;
+			for (int i = 0; i < prefill; ++i) {
+				Particle particle;
 					particle.position.set(
 						ofRandom(system.emitterRect.getMinX(), system.emitterRect.getMaxX()),
 						ofRandom(system.emitterRect.getMinY(), static_cast<float>(outputHeight)));
@@ -1991,11 +2055,11 @@ void ofApp::loadComposition(const std::string &path, bool keepParticles){
 					const float travelLife = (outputHeight / std::max(system.speed, 10.0f)) * 2.5f;
 					particle.lifespan = travelLife + baseLife;
 					particle.noiseSeed = ofRandom(1000.0f);
-					system.particles.push_back(particle);
-				}
-				particleSystems.push_back(system);
+			system.particles.push_back(particle);
 			}
+			particleSystems.push_back(system);
 		}
+	}
 		selectedParticleIndex = particleSystems.empty() ? -1 : 0;
 	}
 }
