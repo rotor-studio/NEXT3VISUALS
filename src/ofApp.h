@@ -4,6 +4,7 @@
 #include "ofxGui.h"
 #include "ofxNDIreceiver.h"
 #include "ofxNDIsender.h"
+#include "ofxOsc.h"
 #include <array>
 #include <algorithm>
 
@@ -48,6 +49,8 @@ private:
 	void drawSliderLabel(const std::string &label, const ofRectangle &rect) const;
 	void startPresetTransition(int presetIndex);
 	void updatePresetTransition(float dt);
+	void sendOscPreset(int presetIndex);
+	void sendOscColor(int colorIndex);
 	void saveComposition();
 	void loadComposition();
 	void saveComposition(const std::string &path);
@@ -67,6 +70,7 @@ private:
 
 	ofxNDIreceiver ndiReceiver;
 	ofxNDIsender ndiSender;
+	ofxOscSender oscSender;
 	std::string ndiOutputName = "NN3_COMPOSITE";
 	ofTexture ndiTexture;
 	ofPixels ndiPixels;
@@ -142,7 +146,9 @@ private:
 	int pendingPresetIndex = 0;
 	bool pendingKeepParticles = false;
 	bool presetTransitionLoaded = false;
+	bool presetTransitionOscSent = false;
 	std::array<ofRectangle, 5> colorRects;
+	ofRectangle oscEnableRect;
 	ofRectangle betterFpsRect;
 	bool draggingFade = false;
 	bool draggingFoamBounce = false;
@@ -223,6 +229,9 @@ private:
 	bool particleSpawnEnabled = true;
 	bool draggingNdiFade = false;
 	bool configLocked = false;
+	bool oscEnabled = true;
+	std::string oscHost = "127.0.0.1";
+	int oscPort = 9000;
 
 	enum class LayerSelection {
 		None,

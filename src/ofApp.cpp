@@ -40,6 +40,7 @@ void ofApp::setup(){
 	ndiTestFont.load("fonts/arial.ttf", 64, true, true);
 
 	ndiSender.CreateSender(ndiOutputName.c_str(), outputWidth, outputHeight);
+	oscSender.setup(oscHost, oscPort);
 	loadComposition();
 }
 
@@ -610,9 +611,14 @@ void ofApp::mousePressed(int x, int y, int button){
 			return;
 		}
 
-	if (resetRect.inside(x, y)) {
-		const float now = ofGetElapsedTimef();
-		if (resetArmed && (now - resetArmedTime) <= 2.0f) {
+		if (oscEnableRect.inside(x, y)) {
+			oscEnabled = !oscEnabled;
+			return;
+		}
+
+		if (resetRect.inside(x, y)) {
+			const float now = ofGetElapsedTimef();
+			if (resetArmed && (now - resetArmedTime) <= 2.0f) {
 			resetComposition();
 			resetArmed = false;
 			currentPresetIndex = 0;
@@ -657,6 +663,7 @@ void ofApp::mousePressed(int x, int y, int button){
 			for (auto &system : particleSystems) {
 				system.trailColorIndex = i;
 			}
+			sendOscColor(i);
 			return;
 		}
 	}
@@ -1368,6 +1375,7 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
         const bool isActive = (selectedParticleIndex >= 0 &&
             selectedParticleIndex < static_cast<int>(particleSystems.size()) &&
             particleSystems[selectedParticleIndex].trailColorIndex == i);
+        const bool isHover = colorRects[i].inside(mx, my);
         if (isActive) {
             ofSetColor(70, 120, 90);
         } else {
@@ -1382,15 +1390,45 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
         } else if (i == 4) {
             ofSetColor(60, 120, 70);
         }
+        if (isHover && !isActive) {
+            ofColor hoverColor = ofGetStyle().color;
+            hoverColor.r = std::min(255, hoverColor.r + 30);
+            hoverColor.g = std::min(255, hoverColor.g + 30);
+            hoverColor.b = std::min(255, hoverColor.b + 30);
+            ofSetColor(hoverColor);
+        }
         ofDrawRectangle(colorRects[i]);
         ofNoFill();
-        ofSetColor(110);
+        ofSetColor(isHover ? ofColor(200) : ofColor(110));
         ofDrawRectangle(colorRects[i]);
         ofFill();
     }
 
-	const float betterFpsY = colorsY + presetSize + 18.0f;
-	betterFpsRect.set(controlsX, betterFpsY, presetSize, presetSize);
+	const float oscTitleY = colorsY + presetSize + 26.0f;
+	ofSetColor(200);
+	ofDrawBitmapString("OSC OUT", controlsX, oscTitleY);
+	const float oscRowY = oscTitleY + 12.0f;
+	oscEnableRect.set(controlsX, oscRowY, presetSize, presetSize);
+	ofSetColor(40);
+	ofDrawRectangle(oscEnableRect);
+	ofSetColor(255);
+	if (oscEnabled) {
+		ofDrawBitmapString("X", oscEnableRect.getCenter().x - 3.0f, oscEnableRect.getCenter().y + 5.0f);
+	}
+	ofNoFill();
+	ofSetColor(110);
+	ofDrawRectangle(oscEnableRect);
+	ofFill();
+	ofSetColor(200);
+	ofDrawBitmapString(oscHost + ":" + ofToString(oscPort),
+		oscEnableRect.x + oscEnableRect.width + 8.0f,
+		oscEnableRect.y + oscEnableRect.height - 6.0f);
+
+	const float betterFpsTitleY = oscEnableRect.y + oscEnableRect.height + 26.0f;
+	ofSetColor(200);
+	ofDrawBitmapString("BETTER FPS", controlsX, betterFpsTitleY);
+	const float betterFpsRowY = betterFpsTitleY + 12.0f;
+	betterFpsRect.set(controlsX, betterFpsRowY, presetSize, presetSize);
 	ofSetColor(40);
 	ofDrawRectangle(betterFpsRect);
 	ofSetColor(255);
@@ -1402,11 +1440,8 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 	ofDrawRectangle(betterFpsRect);
 	ofFill();
 	ofSetColor(200);
-	ofDrawBitmapString("BETTER FPS", betterFpsRect.x + betterFpsRect.width + 8.0f,
-		betterFpsRect.y + betterFpsRect.height - 6.0f);
-
-	const float lockY = betterFpsRect.y + betterFpsRect.height + 8.0f;
-	uiLockRect.set(controlsX, lockY, presetSize, presetSize);
+	const float lockX = betterFpsRect.x + presetSize + 6.0f;
+	uiLockRect.set(lockX, betterFpsRect.y, presetSize, presetSize);
 	ofSetColor(40);
 	ofDrawRectangle(uiLockRect);
 	if (configLocked) {
@@ -1894,6 +1929,7 @@ void ofApp::startPresetTransition(int presetIndex){
 	if (presetTransitionDuration <= 0.0f) {
 		loadComposition(getPresetPath(presetIndex));
 		currentPresetIndex = presetIndex;
+		sendOscPreset(presetIndex);
 		presetTransitionAlpha = 1.0f;
 		isPresetTransition = false;
 		return;
@@ -1903,6 +1939,7 @@ void ofApp::startPresetTransition(int presetIndex){
 	presetTransitionAlpha = 1.0f;
 	presetTransitionPhase = 0.0f;
 	presetTransitionLoaded = false;
+	presetTransitionOscSent = false;
 	pendingKeepParticles = !particleSystems.empty();
 }
 
@@ -1919,6 +1956,10 @@ void ofApp::updatePresetTransition(float dt){
 	if (presetTransitionPhase <= fadeDuration) {
 		presetTransitionAlpha = ofClamp(1.0f - (presetTransitionPhase / fadeDuration), 0.0f, 1.0f);
 		return;
+	}
+	if (!presetTransitionOscSent && pendingPresetIndex > 0) {
+		sendOscPreset(pendingPresetIndex);
+		presetTransitionOscSent = true;
 	}
 	if (presetTransitionPhase <= fadeDuration + holdHalf) {
 		presetTransitionAlpha = 0.0f;
@@ -2457,4 +2498,27 @@ float ofApp::getUiSidebarWidth() const{
 		return 0.0f;
 	}
 	return gui.getShape().getWidth() + 20.0f;
+}
+
+//--------------------------------------------------------------
+void ofApp::sendOscPreset(int presetIndex){
+	if (!oscEnabled) {
+		return;
+	}
+	if (presetIndex <= 0) {
+		return;
+	}
+	ofxOscMessage msg;
+	msg.setAddress("/preset" + ofToString(presetIndex));
+	oscSender.sendMessage(msg, false);
+}
+
+//--------------------------------------------------------------
+void ofApp::sendOscColor(int colorIndex){
+	if (!oscEnabled) {
+		return;
+	}
+	ofxOscMessage msg;
+	msg.setAddress("/color" + ofToString(colorIndex));
+	oscSender.sendMessage(msg, false);
 }
