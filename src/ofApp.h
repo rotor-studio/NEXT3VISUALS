@@ -59,6 +59,7 @@ private:
 	ofVec2f windowToOutput(const ofVec2f &windowPos) const;
 	ofRectangle outputToWindowRect(const ofRectangle &outputRect) const;
 	void updateSelectedFoamFade(float mouseX);
+	void updateSelectedFoamBounce(float mouseX);
 	void updateNdiPlacement();
 	ofRectangle getNdiOutputRect() const;
 	void drawNdiTestPattern();
@@ -83,6 +84,7 @@ private:
 	std::string ndiDesiredSenderName;
 	float lastSenderScanTime = 0.0f;
 	float senderScanInterval = 2.0f;
+	int ndiAvailableSenderCount = 0;
 
 	ofxPanel gui;
 	bool showGui = true;
@@ -106,6 +108,7 @@ private:
 		ofVec2f size;
 		float timeOffset = 0.0f;
 		float fade = 0.85f;
+		float bounceOffset = 0.25f;
 		bool useMist = false;
 		bool enabled = true;
 		bool locked = false;
@@ -123,6 +126,7 @@ private:
 	ofRectangle addFoamRect;
 	ofRectangle deleteFoamRect;
 	ofRectangle fadeSliderRect;
+	ofRectangle foamBounceRect;
 	ofRectangle mistSpeedRect;
 	ofRectangle resetRect;
 	ofRectangle ndiTestRect;
@@ -139,6 +143,7 @@ private:
 	bool presetTransitionLoaded = false;
 	std::array<ofRectangle, 5> colorRects;
 	bool draggingFade = false;
+	bool draggingFoamBounce = false;
 	bool draggingMistSpeed = false;
 	bool resetArmed = false;
 	float resetArmedTime = 0.0f;

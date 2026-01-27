@@ -67,6 +67,9 @@ You are a senior creative coder / realtime systems engineer specialized in openF
 - NDI selection: store desired sender name and attempt reconnect when sender appears; apply on general load even if sender list is empty.
 - Particles: global spawn toggle (green/red) should stop new spawns immediately and never be saved/loaded; existing particles finish naturally.
 - UI spacing: keep generous vertical spacing between NDI/FOAM/PARTICLES and between preset controls to avoid overlap.
+- Foam bounce width: FOAM slider now controls horizontal bounce width (0-100%, centered), not Y position. Default is full width and it is saved per FOAM in presets.
+- NDI status: dropdown background is green when the selected sender is connected, red when selected but unavailable, gray when <none>.
+- NDI resilience: keep desired sender name even if offline; release receiver when unavailable and reconnect when the sender reappears. Do not crash if the source stops.
 
 ## Next Steps
 - Scaffold folders and move `src/` to match the structure above.

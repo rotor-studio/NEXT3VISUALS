@@ -53,8 +53,8 @@ void ofApp::update(){
 		resetArmed = false;
 	}
 
-	if (selectedSenderIndex >= 0 && selectedSenderIndex < static_cast<int>(ndiSenders.size())) {
-		if (!ndiReceiver.ReceiverCreated() && selectedSenderIndex != 0) {
+	if (selectedSenderIndex > 0 && selectedSenderIndex < static_cast<int>(ndiSenders.size())) {
+		if (selectedSenderIndex <= ndiAvailableSenderCount && !ndiReceiver.ReceiverCreated()) {
 			ndiReceiver.SetSenderName(ndiSenders[selectedSenderIndex]);
 			ndiReceiver.CreateReceiver(-1);
 		}
@@ -374,6 +374,10 @@ void ofApp::mouseDragged(int x, int y, int button){
 		updateSelectedFoamFade(static_cast<float>(x));
 	}
 
+	if (draggingFoamBounce) {
+		updateSelectedFoamBounce(static_cast<float>(x));
+	}
+
 	if (draggingMistSpeed) {
 		const float t = ofClamp((x - mistSpeedRect.x) / mistSpeedRect.width, 0.0f, 1.0f);
 		mistSpeed = ofLerp(0.2f, 2.0f, t);
@@ -480,6 +484,12 @@ void ofApp::mousePressed(int x, int y, int button){
 		if (fadeSliderRect.inside(x, y)) {
 			draggingFade = true;
 			updateSelectedFoamFade(static_cast<float>(x));
+			return;
+		}
+
+		if (foamBounceRect.inside(x, y)) {
+			draggingFoamBounce = true;
+			updateSelectedFoamBounce(static_cast<float>(x));
 			return;
 		}
 
@@ -761,6 +771,7 @@ void ofApp::mouseReleased(int x, int y, int button){
 	draggingFoam = false;
 	draggingNdi = false;
 	draggingFade = false;
+	draggingFoamBounce = false;
 	draggingMistSpeed = false;
 	draggingNdiFade = false;
 	draggingParticleSlider = false;
@@ -835,35 +846,40 @@ void ofApp::refreshNdiSenders(){
 	lastSenderScanTime = ofGetElapsedTimef();
 
 	const int senderCount = ndiReceiver.FindSenders();
+	ndiAvailableSenderCount = std::max(0, senderCount);
 	ndiSenders = ndiReceiver.GetSenderList();
 	ndiSenders.insert(ndiSenders.begin(), "<none>");
 
+	int desiredIndex = -1;
 	if (!ndiDesiredSenderName.empty()) {
 		for (int i = 1; i < static_cast<int>(ndiSenders.size()); ++i) {
 			if (ndiSenders[i] == ndiDesiredSenderName) {
-				selectSenderIndex(i);
+				desiredIndex = i;
 				break;
 			}
 		}
+		if (desiredIndex < 0) {
+			ndiSenders.push_back(ndiDesiredSenderName);
+			desiredIndex = static_cast<int>(ndiSenders.size()) - 1;
+		}
 	}
 
-	if (senderCount <= 0) {
-		selectedSenderIndex = 0;
+	const int maxIndex = static_cast<int>(ndiSenders.size()) - 1;
+	if (!ndiDesiredSenderName.empty() && desiredIndex >= 0) {
+		selectedSenderIndex = desiredIndex;
+	} else if (selectedSenderIndex < 0 || selectedSenderIndex > maxIndex) {
+		selectedSenderIndex = (senderCount > 0) ? 1 : 0;
+	}
+
+	const bool senderAvailable = selectedSenderIndex > 0 && selectedSenderIndex <= ndiAvailableSenderCount;
+	if (!senderAvailable) {
 		ndiReceiver.ReleaseReceiver();
 		return;
-	} else {
-		const int maxIndex = static_cast<int>(ndiSenders.size()) - 1;
-		if (selectedSenderIndex < 0 || selectedSenderIndex > maxIndex) {
-			selectedSenderIndex = 1;
-		}
-		if (selectedSenderIndex == 0) {
-			ndiReceiver.ReleaseReceiver();
-		} else {
-			ndiReceiver.SetSenderName(ndiSenders[selectedSenderIndex]);
-			if (!ndiReceiver.ReceiverCreated()) {
-				ndiReceiver.CreateReceiver(-1);
-			}
-		}
+	}
+
+	ndiReceiver.SetSenderName(ndiSenders[selectedSenderIndex]);
+	if (!ndiReceiver.ReceiverCreated()) {
+		ndiReceiver.CreateReceiver(-1);
 	}
 }
 
@@ -893,6 +909,10 @@ void ofApp::selectSenderIndex(int index){
 		return;
 	}
 	ndiDesiredSenderName = ndiSenders[selectedSenderIndex];
+	if (selectedSenderIndex > ndiAvailableSenderCount) {
+		ndiReceiver.ReleaseReceiver();
+		return;
+	}
 	ndiReceiver.ReleaseReceiver();
 	ndiReceiver.SetSenderName(ndiSenders[selectedSenderIndex]);
 	ndiReceiver.CreateReceiver(-1);
@@ -980,7 +1000,16 @@ void ofApp::drawNdiDropdown(){
 	ofSetColor(110);
 	ofDrawRectangle(ndiFadeRect);
 	ofFill();
-	ofSetColor(30);
+	const bool senderSelected = selectedSenderIndex > 0;
+	const bool senderAvailable = senderSelected && selectedSenderIndex <= ndiAvailableSenderCount;
+	const bool senderConnected = senderAvailable && ndiEnabled && ndiReceiver.ReceiverConnected();
+	if (senderSelected && senderConnected) {
+		ofSetColor(20, 90, 45);
+	} else if (senderSelected && !senderConnected) {
+		ofSetColor(110, 30, 30);
+	} else {
+		ofSetColor(30);
+	}
 	ofDrawRectangle(dropdownRect);
 	ofSetColor(255);
 	ofDrawBitmapString(currentName,
@@ -1037,7 +1066,8 @@ void ofApp::drawFoamControls(){
 	const float fadeX = deleteFoamRect.x + buttonSize + 8.0f;
 	const float fadeW = panelRect.width - (fadeX - panelRect.x);
 	fadeSliderRect.set(fadeX, controlsY, fadeW, sliderHeight);
-	mistSpeedRect.set(fadeX, fadeSliderRect.y + sliderHeight + 6.0f, fadeW, sliderHeight);
+	foamBounceRect.set(fadeX, fadeSliderRect.y + 12.0f, fadeW, sliderHeight);
+	mistSpeedRect.set(fadeX, foamBounceRect.y + 12.0f, fadeW, sliderHeight);
 
 	ofPushStyle();
 	ofSetColor(200);
@@ -1060,15 +1090,19 @@ ofDrawBitmapString("FOAM", controlsX, controlsY - 7.0f);
 	}
 
 	float fadeValue = 0.0f;
+	float bounceValue = 0.0f;
 	if (selectedFoamIndex >= 0 && selectedFoamIndex < static_cast<int>(foamLayers.size())) {
 		fadeValue = foamLayers[selectedFoamIndex].fade;
+		bounceValue = ofClamp(foamLayers[selectedFoamIndex].bounceOffset, 0.0f, 1.0f);
 	}
 
 	ofSetColor(60);
 	ofDrawRectangle(fadeSliderRect);
+	ofDrawRectangle(foamBounceRect);
 	const float filledWidth = fadeSliderRect.width * fadeValue;
 	ofSetColor(180);
 	ofDrawRectangle(fadeSliderRect.x, fadeSliderRect.y, filledWidth, fadeSliderRect.height);
+	ofDrawRectangle(foamBounceRect.x, foamBounceRect.y, foamBounceRect.width * bounceValue, foamBounceRect.height);
 
 	const float mistSpeedValue = ofClamp(ofMap(mistSpeed, 0.2f, 2.0f, 0.0f, 1.0f, true), 0.0f, 1.0f);
 	ofSetColor(60);
@@ -1079,6 +1113,7 @@ ofDrawBitmapString("FOAM", controlsX, controlsY - 7.0f);
 	ofNoFill();
 	ofSetColor(110);
 	ofDrawRectangle(fadeSliderRect);
+	ofDrawRectangle(foamBounceRect);
 	ofDrawRectangle(mistSpeedRect);
 	ofFill();
 
@@ -1094,6 +1129,8 @@ ofDrawBitmapString("FOAM", controlsX, controlsY - 7.0f);
 	const int my = ofGetMouseY();
 	if (draggingFade || fadeSliderRect.inside(mx, my)) {
 		drawSliderLabel("FADE", fadeSliderRect);
+	} else if (draggingFoamBounce || foamBounceRect.inside(mx, my)) {
+		drawSliderLabel("BOUNCE WIDTH", foamBounceRect);
 	} else if (draggingMistSpeed || mistSpeedRect.inside(mx, my)) {
 		drawSliderLabel("MIST SPEED", mistSpeedRect);
 	} else if (foamMistRect.inside(mx, my)) {
@@ -1513,7 +1550,12 @@ void ofApp::updateParticles(float dt){
 					continue;
 				}
 				const float lineY = foam.position.y + foam.size.y * 0.25f;
-				if (particle.position.x >= foam.position.x && particle.position.x <= foam.position.x + foam.size.x) {
+				const float widthRatio = ofClamp(foam.bounceOffset, 0.0f, 1.0f);
+				const float bounceWidth = foam.size.x * widthRatio;
+				const float bounceCenter = foam.position.x + foam.size.x * 0.5f;
+				const float bounceLeft = bounceCenter - bounceWidth * 0.5f;
+				const float bounceRight = bounceCenter + bounceWidth * 0.5f;
+				if (particle.position.x >= bounceLeft && particle.position.x <= bounceRight) {
 					if (particle.prevPos.y < lineY && particle.position.y >= lineY && particle.velocity.y > 0.0f) {
 						const float speedMag = particle.velocity.length();
 						const float speedFactor = ofClamp(ofMap(speedMag, 40.0f, 600.0f, 0.5f, 1.4f, true), 0.5f, 1.4f);
@@ -1892,6 +1934,7 @@ void ofApp::saveComposition(const std::string &path, bool includeGlobals){
 			{"w", layer.size.x},
 			{"h", layer.size.y},
 			{"fade", layer.fade},
+			{"bounceOffset", layer.bounceOffset},
 			{"timeOffset", layer.timeOffset},
 			{"useMist", layer.useMist},
 			{"enabled", layer.enabled}
@@ -1990,6 +2033,7 @@ void ofApp::loadComposition(const std::string &path, bool keepParticles, bool ap
 			layer.position.set(item.value("x", 0.0f), item.value("y", 0.0f));
 			layer.size.set(item.value("w", 400.0f), item.value("h", 300.0f));
 			layer.fade = item.value("fade", 0.85f);
+			layer.bounceOffset = item.value("bounceOffset", 1.0f);
 			layer.timeOffset = item.value("timeOffset", ofRandom(1000.0f));
 			layer.useMist = item.value("useMist", false);
 			layer.enabled = item.value("enabled", true);
@@ -2079,6 +2123,7 @@ void ofApp::createFoamLayer(){
 		layer.size.set(400.0f, 300.0f);
 		layer.position.set((outputWidth - layer.size.x) * 0.5f, (outputHeight - layer.size.y) * 0.5f);
 	}
+	layer.bounceOffset = 1.0f;
 	layer.timeOffset = ofRandom(1000.0f);
 	layer.useMist = foamUseMist;
 	const int fboW = std::max(1, static_cast<int>(layer.size.x * foamRenderScale));
@@ -2200,6 +2245,16 @@ void ofApp::updateSelectedFoamFade(float mouseX){
 
 	const float t = ofClamp((mouseX - fadeSliderRect.x) / fadeSliderRect.width, 0.0f, 1.0f);
 	foamLayers[selectedFoamIndex].fade = t;
+}
+
+//--------------------------------------------------------------
+void ofApp::updateSelectedFoamBounce(float mouseX){
+	if (selectedFoamIndex < 0 || selectedFoamIndex >= static_cast<int>(foamLayers.size())) {
+		return;
+	}
+
+	const float t = ofClamp((mouseX - foamBounceRect.x) / foamBounceRect.width, 0.0f, 1.0f);
+	foamLayers[selectedFoamIndex].bounceOffset = t;
 }
 
 //--------------------------------------------------------------
