@@ -71,6 +71,7 @@ You are a senior creative coder / realtime systems engineer specialized in openF
 - NDI status: dropdown background is green when the selected sender is connected, red when selected but unavailable, gray when <none>.
 - NDI resilience: keep desired sender name even if offline; release receiver when unavailable and reconnect when the sender reappears. Do not crash if the source stops.
 - Performance: particles skip trail buffer updates when trail=0 and precompute common draw values per system to reduce per-particle overhead.
+- Performance tests: FOAM updates every 2 frames for performance. Preview draw toggle lives under COLORS as "BETTER FPS". UI lock toggle lives under that ("LOCK UI") and blocks edits; key `K` also toggles it.
 
 ## Next Steps
 - Scaffold folders and move `src/` to match the structure above.

@@ -88,6 +88,7 @@ private:
 
 	ofxPanel gui;
 	bool showGui = true;
+	bool previewEnabled = true;
 
 	ofRectangle dropdownRect;
 	float dropdownItemHeight = 22.0f;
@@ -142,6 +143,7 @@ private:
 	bool pendingKeepParticles = false;
 	bool presetTransitionLoaded = false;
 	std::array<ofRectangle, 5> colorRects;
+	ofRectangle betterFpsRect;
 	bool draggingFade = false;
 	bool draggingFoamBounce = false;
 	bool draggingMistSpeed = false;
@@ -153,6 +155,7 @@ private:
 	bool foamGroupEnabled = true;
 	bool foamUseMist = false;
 	float mistSpeed = 1.0f;
+	int foamUpdateInterval = 2;
 
 	bool showAllBorders = false;
 
@@ -215,9 +218,11 @@ private:
 	ofRectangle particleSpawnRect;
 	ofRectangle ndiEnableRect;
 	ofRectangle ndiFadeRect;
+	ofRectangle uiLockRect;
 	bool particleGroupEnabled = true;
 	bool particleSpawnEnabled = true;
 	bool draggingNdiFade = false;
+	bool configLocked = false;
 
 	enum class LayerSelection {
 		None,
