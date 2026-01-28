@@ -51,6 +51,7 @@ private:
 	void updatePresetTransition(float dt);
 	void sendOscPreset(int presetIndex);
 	void sendOscColor(int colorIndex);
+	void triggerCycleEvent();
 	void saveComposition();
 	void loadComposition();
 	void saveComposition(const std::string &path);
@@ -149,6 +150,11 @@ private:
 	bool presetTransitionOscSent = false;
 	std::array<ofRectangle, 5> colorRects;
 	ofRectangle oscEnableRect;
+	ofRectangle cyclePlayRect;
+	ofRectangle cycleStopRect;
+	ofRectangle cycleProgressRect;
+	ofRectangle cycleDurationRect;
+	ofRectangle cycleWindowRect;
 	ofRectangle betterFpsRect;
 	bool draggingFade = false;
 	bool draggingFoamBounce = false;
@@ -232,6 +238,15 @@ private:
 	bool oscEnabled = true;
 	std::string oscHost = "127.0.0.1";
 	int oscPort = 9000;
+	bool cyclePlaying = false;
+	float cycleDuration = 180.0f;
+	float cyclePhase = 0.0f;
+	float cyclePhasePrev = 0.0f;
+	float cycleTriggerWidth = 0.12f;
+	bool cycleTriggered = false;
+	bool draggingCycleDuration = false;
+	bool draggingCycleWindow = false;
+	int currentColorIndex = 0;
 
 	enum class LayerSelection {
 		None,

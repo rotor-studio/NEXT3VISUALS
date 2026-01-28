@@ -73,6 +73,7 @@ You are a senior creative coder / realtime systems engineer specialized in openF
 - Performance: particles skip trail buffer updates when trail=0 and precompute common draw values per system to reduce per-particle overhead.
 - Performance tests: FOAM updates every 2 frames for performance. Preview draw toggle lives under COLORS as "BETTER FPS". UI lock toggle lives under that ("LOCK UI") and blocks edits; key `K` also toggles it.
 - OSC out: send `/presetX` when the transition first hits black (before load); UI lives under COLORS with enable toggle and shows host:port.
+- Sequence bar: between COLORS and OSC OUT. Play/Stop + cycle progress, with sliders for cycle duration and trigger window. On trigger, randomly selects a preset and color.
 
 ## Next Steps
 - Scaffold folders and move `src/` to match the structure above.

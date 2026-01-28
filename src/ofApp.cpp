@@ -91,6 +91,24 @@ void ofApp::update(){
 	updateFoamLayers();
 	updateParticles(dt);
 
+	if (cyclePlaying && cycleDuration > 0.0f) {
+		cyclePhasePrev = cyclePhase;
+		cyclePhase += dt / cycleDuration;
+		if (cyclePhase >= 1.0f) {
+			cyclePhase -= 1.0f;
+			cyclePhasePrev = cyclePhase;
+			cycleTriggered = false;
+		}
+		const float triggerStart = ofClamp(1.0f - cycleTriggerWidth, 0.0f, 1.0f);
+		const bool crossedIntoWindow = (!cycleTriggered &&
+			((cyclePhasePrev < triggerStart && cyclePhase >= triggerStart) ||
+			 (cyclePhasePrev > cyclePhase && cyclePhase >= triggerStart)));
+		if (cycleTriggerWidth > 0.0f && crossedIntoWindow) {
+			triggerCycleEvent();
+			cycleTriggered = true;
+		}
+	}
+
 	if (outputFbo.isAllocated()) {
 		outputFbo.begin();
 		ofClear(0, 0, 0, 255);
@@ -400,6 +418,16 @@ void ofApp::mouseDragged(int x, int y, int button){
 		ndiFade = t;
 	}
 
+	if (draggingCycleDuration) {
+		const float t = ofClamp((x - cycleDurationRect.x) / cycleDurationRect.width, 0.0f, 1.0f);
+		cycleDuration = ofLerp(10.0f, 600.0f, t);
+	}
+
+	if (draggingCycleWindow) {
+		const float t = ofClamp((x - cycleWindowRect.x) / cycleWindowRect.width, 0.0f, 1.0f);
+		cycleTriggerWidth = ofLerp(0.0f, 0.5f, t);
+	}
+
 	if (draggingParticleSlider) {
 		updateSelectedParticleSlider(static_cast<float>(x));
 	}
@@ -611,6 +639,30 @@ void ofApp::mousePressed(int x, int y, int button){
 			return;
 		}
 
+		if (cyclePlayRect.inside(x, y)) {
+			cyclePlaying = true;
+			return;
+		}
+
+		if (cycleStopRect.inside(x, y)) {
+			cyclePlaying = false;
+			return;
+		}
+
+		if (cycleDurationRect.inside(x, y)) {
+			draggingCycleDuration = true;
+			const float t = ofClamp((x - cycleDurationRect.x) / cycleDurationRect.width, 0.0f, 1.0f);
+			cycleDuration = ofLerp(10.0f, 600.0f, t);
+			return;
+		}
+
+		if (cycleWindowRect.inside(x, y)) {
+			draggingCycleWindow = true;
+			const float t = ofClamp((x - cycleWindowRect.x) / cycleWindowRect.width, 0.0f, 1.0f);
+			cycleTriggerWidth = ofLerp(0.0f, 0.5f, t);
+			return;
+		}
+
 		if (oscEnableRect.inside(x, y)) {
 			oscEnabled = !oscEnabled;
 			return;
@@ -663,6 +715,7 @@ void ofApp::mousePressed(int x, int y, int button){
 			for (auto &system : particleSystems) {
 				system.trailColorIndex = i;
 			}
+			currentColorIndex = i;
 			sendOscColor(i);
 			return;
 		}
@@ -810,6 +863,8 @@ void ofApp::mouseReleased(int x, int y, int button){
 	draggingParticleSlider = false;
 	activeParticleSlider = -1;
 	draggingEmitter = false;
+	draggingCycleDuration = false;
+	draggingCycleWindow = false;
 
 }
 
@@ -1328,8 +1383,12 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
     ofSetColor(200);
     const float presetHintY = presetY + presetSize + 22.0f;
     ofDrawBitmapString("SHIFT=SAVE  ALT=CLEAR", controlsX, presetHintY);
+	if (currentPresetIndex > 0) {
+		ofSetColor(160);
+		ofDrawBitmapString("ACTIVE: " + ofToString(currentPresetIndex), controlsX, presetHintY + 14.0f);
+	}
 
-    const float transitionTitleY = presetHintY + 20.0f;
+    const float transitionTitleY = presetHintY + 34.0f;
     ofSetColor(200);
     ofDrawBitmapString("TRANSITION", controlsX, transitionTitleY);
     presetTransitionRect.set(controlsX, transitionTitleY + 10.0f, panelRect.width, 10.0f);
@@ -1372,9 +1431,7 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
     const float colorsY = colorsTitleY + 12.0f;
     for (int i = 0; i < static_cast<int>(colorRects.size()); ++i) {
         colorRects[i].set(controlsX + i * (presetSize + presetGap), colorsY, presetSize, presetSize);
-        const bool isActive = (selectedParticleIndex >= 0 &&
-            selectedParticleIndex < static_cast<int>(particleSystems.size()) &&
-            particleSystems[selectedParticleIndex].trailColorIndex == i);
+        const bool isActive = currentColorIndex == i;
         const bool isHover = colorRects[i].inside(mx, my);
         if (isActive) {
             ofSetColor(70, 120, 90);
@@ -1398,13 +1455,99 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
             ofSetColor(hoverColor);
         }
         ofDrawRectangle(colorRects[i]);
+		if (isActive) {
+			ofSetColor(230);
+			ofDrawCircle(colorRects[i].getCenter(), 3.0f);
+		}
         ofNoFill();
-        ofSetColor(isHover ? ofColor(200) : ofColor(110));
+        ofSetColor(isHover ? ofColor(220) : (isActive ? ofColor(200) : ofColor(110)));
         ofDrawRectangle(colorRects[i]);
         ofFill();
     }
 
-	const float oscTitleY = colorsY + presetSize + 26.0f;
+	const float cycleTitleY = colorsY + presetSize + 34.0f;
+	ofSetColor(200);
+	ofDrawBitmapString("SEQUENCE", controlsX, cycleTitleY);
+	const float cycleRowY = cycleTitleY + 12.0f;
+	cyclePlayRect.set(controlsX, cycleRowY, presetSize, presetSize);
+	cycleStopRect.set(cyclePlayRect.x + presetSize + 6.0f, cycleRowY, presetSize, presetSize);
+	const float cycleBarX = cycleStopRect.x + presetSize + 16.0f;
+	const float cycleBarW = panelRect.width - (cycleBarX - panelRect.x);
+	cycleProgressRect.set(cycleBarX, cycleRowY + 6.0f, cycleBarW, 10.0f);
+
+	const bool playHover = cyclePlayRect.inside(mx, my);
+	const bool stopHover = cycleStopRect.inside(mx, my);
+	if (cyclePlaying) {
+		ofSetColor(50, 120, 70);
+	} else if (playHover) {
+		ofSetColor(80);
+	} else {
+		ofSetColor(40);
+	}
+	ofDrawRectangle(cyclePlayRect);
+	if (cyclePlaying) {
+		ofSetColor(70, 30, 30);
+	} else if (stopHover) {
+		ofSetColor(80);
+	} else {
+		ofSetColor(40);
+	}
+	ofDrawRectangle(cycleStopRect);
+	ofSetColor(255);
+	ofDrawBitmapString(">", cyclePlayRect.getCenter().x - 3.0f, cyclePlayRect.getCenter().y + 5.0f);
+	ofDrawBitmapString("[]", cycleStopRect.getCenter().x - 5.0f, cycleStopRect.getCenter().y + 5.0f);
+	ofNoFill();
+	ofSetColor(110);
+	ofDrawRectangle(cyclePlayRect);
+	ofDrawRectangle(cycleStopRect);
+	ofFill();
+
+	ofSetColor(60);
+	ofDrawRectangle(cycleProgressRect);
+	ofSetColor(180);
+	ofDrawRectangle(cycleProgressRect.x, cycleProgressRect.y,
+		cycleProgressRect.width * ofClamp(cyclePhase, 0.0f, 1.0f),
+		cycleProgressRect.height);
+	ofNoFill();
+	ofSetColor(110);
+	ofDrawRectangle(cycleProgressRect);
+	ofFill();
+
+	const float cycleDurationY = cycleProgressRect.y + cycleProgressRect.height + 18.0f;
+	cycleDurationRect.set(controlsX, cycleDurationY, panelRect.width, 10.0f);
+	ofSetColor(60);
+	ofDrawRectangle(cycleDurationRect);
+	ofSetColor(180);
+	ofDrawRectangle(cycleDurationRect.x, cycleDurationRect.y,
+		cycleDurationRect.width * ofClamp((cycleDuration - 10.0f) / (600.0f - 10.0f), 0.0f, 1.0f),
+		cycleDurationRect.height);
+	ofNoFill();
+	ofSetColor(110);
+	ofDrawRectangle(cycleDurationRect);
+	ofFill();
+	ofSetColor(200);
+	ofDrawBitmapString("CYCLE " + ofToString(cycleDuration, 0) + "s",
+		cycleDurationRect.x + cycleDurationRect.width - 70.0f,
+		cycleDurationRect.y + cycleDurationRect.height + 12.0f);
+
+	const float cycleWindowY = cycleDurationRect.y + cycleDurationRect.height + 18.0f;
+	cycleWindowRect.set(controlsX, cycleWindowY, panelRect.width, 10.0f);
+	ofSetColor(60);
+	ofDrawRectangle(cycleWindowRect);
+	ofSetColor(180);
+	ofDrawRectangle(cycleWindowRect.x, cycleWindowRect.y,
+		cycleWindowRect.width * ofClamp(cycleTriggerWidth / 0.5f, 0.0f, 1.0f),
+		cycleWindowRect.height);
+	ofNoFill();
+	ofSetColor(110);
+	ofDrawRectangle(cycleWindowRect);
+	ofFill();
+	ofSetColor(200);
+	ofDrawBitmapString("WINDOW " + ofToString(cycleTriggerWidth * 100.0f, 0) + "%",
+		cycleWindowRect.x + cycleWindowRect.width - 70.0f,
+		cycleWindowRect.y + cycleWindowRect.height + 12.0f);
+
+	const float oscTitleY = cycleWindowRect.y + cycleWindowRect.height + 34.0f;
 	ofSetColor(200);
 	ofDrawBitmapString("OSC OUT", controlsX, oscTitleY);
 	const float oscRowY = oscTitleY + 12.0f;
@@ -1424,7 +1567,7 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 		oscEnableRect.x + oscEnableRect.width + 8.0f,
 		oscEnableRect.y + oscEnableRect.height - 6.0f);
 
-	const float betterFpsTitleY = oscEnableRect.y + oscEnableRect.height + 26.0f;
+	const float betterFpsTitleY = oscEnableRect.y + oscEnableRect.height + 34.0f;
 	ofSetColor(200);
 	ofDrawBitmapString("BETTER FPS", controlsX, betterFpsTitleY);
 	const float betterFpsRowY = betterFpsTitleY + 12.0f;
@@ -1480,6 +1623,10 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 		} else if (activeParticleSlider == 8) {
 			drawSliderLabel("NOISE START", particleNoiseStartRect);
 		}
+	} else if (draggingCycleDuration || cycleDurationRect.inside(mx, my)) {
+		drawSliderLabel("CYCLE TIME", cycleDurationRect);
+	} else if (draggingCycleWindow || cycleWindowRect.inside(mx, my)) {
+		drawSliderLabel("TRIGGER WINDOW", cycleWindowRect);
 	} else if (presetTransitionRect.inside(mx, my)) {
 		drawSliderLabel("TRANSITION", presetTransitionRect);
 	} else {
@@ -2062,6 +2209,8 @@ void ofApp::saveComposition(const std::string &path, bool includeGlobals){
 		data["ndi"]["sender"] = senderName;
 		data["ndi"]["senderIndex"] = selectedSenderIndex;
 		data["presetTransitionDuration"] = presetTransitionDuration;
+		data["sequence"]["duration"] = cycleDuration;
+		data["sequence"]["window"] = cycleTriggerWidth;
 	}
 	data["ndi"]["enabled"] = ndiEnabled;
 	data["ndi"]["fade"] = ndiFade;
@@ -2157,6 +2306,10 @@ void ofApp::loadComposition(const std::string &path, bool keepParticles, bool ap
 		}
 		selectSenderIndex(senderIndex);
 		presetTransitionDuration = data.value("presetTransitionDuration", presetTransitionDuration);
+		if (data.contains("sequence")) {
+			cycleDuration = data["sequence"].value("duration", cycleDuration);
+			cycleTriggerWidth = data["sequence"].value("window", cycleTriggerWidth);
+		}
 	}
 	ndiEnabled = data.value("ndi", ofJson::object()).value("enabled", true);
 	ndiFade = data.value("ndi", ofJson::object()).value("fade", 1.0f);
@@ -2250,6 +2403,9 @@ void ofApp::loadComposition(const std::string &path, bool keepParticles, bool ap
 		}
 	}
 		selectedParticleIndex = particleSystems.empty() ? -1 : 0;
+		if (!particleSystems.empty()) {
+			currentColorIndex = particleSystems[0].trailColorIndex;
+		}
 	}
 }
 //--------------------------------------------------------------
@@ -2521,4 +2677,18 @@ void ofApp::sendOscColor(int colorIndex){
 	ofxOscMessage msg;
 	msg.setAddress("/color" + ofToString(colorIndex));
 	oscSender.sendMessage(msg, false);
+}
+
+//--------------------------------------------------------------
+void ofApp::triggerCycleEvent(){
+	const int presetIndex = static_cast<int>(ofRandom(1, 6));
+	const int colorIndex = static_cast<int>(ofRandom(0, 5));
+
+	startPresetTransition(presetIndex);
+
+	for (auto &system : particleSystems) {
+		system.trailColorIndex = colorIndex;
+	}
+	currentColorIndex = colorIndex;
+	sendOscColor(colorIndex);
 }
