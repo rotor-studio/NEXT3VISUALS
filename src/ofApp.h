@@ -72,6 +72,7 @@ private:
 	ofxNDIreceiver ndiReceiver;
 	ofxNDIsender ndiSender;
 	ofxOscSender oscSender;
+	ofImage logoImage;
 	std::string ndiOutputName = "NN3_COMPOSITE";
 	ofTexture ndiTexture;
 	ofPixels ndiPixels;
@@ -94,6 +95,10 @@ private:
 	ofxPanel gui;
 	bool showGui = true;
 	bool previewEnabled = true;
+	bool compactMode = false;
+	ofVec2f compactSavedWindowSize;
+	bool compactSavedGui = true;
+	bool compactSavedPreview = true;
 
 	ofRectangle dropdownRect;
 	float dropdownItemHeight = 22.0f;

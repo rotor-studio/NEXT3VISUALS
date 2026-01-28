@@ -38,6 +38,7 @@ void ofApp::setup(){
 	refreshNdiSenders();
 
 	ndiTestFont.load("fonts/arial.ttf", 64, true, true);
+	logoImage.load("images/logo.png");
 
 	ndiSender.CreateSender(ndiOutputName.c_str(), outputWidth, outputHeight);
 	oscSender.setup(oscHost, oscPort);
@@ -328,6 +329,27 @@ void ofApp::draw(){
 	ofSetColor(220);
 	ofDrawBitmapString("FPS " + ofToString(ofGetFrameRate(), 1), fpsX, fpsY);
 
+	if (compactMode && previewRect.getWidth() > 0.0f) {
+		const float barW = 140.0f;
+		const float barH = 6.0f;
+		const float barX = previewRect.x + previewRect.getWidth() - barW - 8.0f;
+		const float barY = fpsY - barH - 6.0f;
+		ofSetColor(0, 0, 0, 160);
+		ofDrawRectangle(barX - 2.0f, barY - 2.0f, barW + 4.0f, barH + 4.0f);
+		ofSetColor(60);
+		ofDrawRectangle(barX, barY, barW, barH);
+		ofSetColor(180);
+		ofDrawRectangle(barX, barY, barW * ofClamp(cyclePhase, 0.0f, 1.0f), barH);
+	}
+
+	if (logoImage.isAllocated()) {
+		const float logoSize = 75.0f;
+		const float logoX = 8.0f;
+		const float logoY = static_cast<float>(ofGetHeight()) - logoSize - 8.0f;
+		ofSetColor(255);
+		logoImage.draw(logoX, logoY, logoSize, logoSize);
+	}
+
 }
 
 //--------------------------------------------------------------
@@ -346,7 +368,27 @@ void ofApp::keyPressed(int key){
 		configLocked = !configLocked;
 	}
 	if (key == 'p' || key == 'P') {
-		previewEnabled = !previewEnabled;
+		compactMode = !compactMode;
+		if (compactMode) {
+			compactSavedWindowSize.set(ofGetWidth(), ofGetHeight());
+			compactSavedGui = showGui;
+			compactSavedPreview = previewEnabled;
+			const float scale = 0.75f;
+			const float aspect = static_cast<float>(outputWidth) / static_cast<float>(outputHeight);
+			const int newH = static_cast<int>(compactSavedWindowSize.y * scale);
+			const int newW = static_cast<int>(newH * aspect);
+			ofSetWindowShape(std::max(200, newW), std::max(200, newH));
+			showGui = false;
+			previewEnabled = true;
+			showAllBorders = false;
+		} else {
+			if (compactSavedWindowSize.x > 0.0f && compactSavedWindowSize.y > 0.0f) {
+				ofSetWindowShape(static_cast<int>(compactSavedWindowSize.x),
+					static_cast<int>(compactSavedWindowSize.y));
+			}
+			showGui = compactSavedGui;
+			previewEnabled = compactSavedPreview;
+		}
 	}
 	if (key == 'v' || key == 'V') {
 		showAllBorders = !showAllBorders;
@@ -373,7 +415,7 @@ void ofApp::mouseMoved(int    x, int y ){
 
 //--------------------------------------------------------------
 void ofApp::mouseDragged(int x, int y, int button){
-	if (configLocked) {
+	if (configLocked || compactMode) {
 		return;
 	}
 	if (draggingFoam && selectedFoamIndex >= 0 && selectedFoamIndex < static_cast<int>(foamLayers.size())) {
@@ -733,7 +775,7 @@ void ofApp::mousePressed(int x, int y, int button){
 	}
 	}
 
-	if (configLocked) {
+	if (configLocked || compactMode) {
 		return;
 	}
 	if (selectedLayer == LayerSelection::Foam && selectedFoamIndex >= 0 &&
@@ -870,7 +912,7 @@ void ofApp::mouseReleased(int x, int y, int button){
 
 //--------------------------------------------------------------
 void ofApp::mouseScrolled(int x, int y, float scrollX, float scrollY){
-	if (configLocked) {
+	if (configLocked || compactMode) {
 		return;
 	}
 	if (selectedLayer == LayerSelection::Foam && selectedFoamIndex >= 0 &&
@@ -2619,27 +2661,17 @@ void ofApp::updatePreviewRect(){
 	}
 
 	const float sidebarWidth = getUiSidebarWidth();
-	const float usableWidth = std::max(1.0f, ofGetWidth() - sidebarWidth);
-	const ofRectangle bounds(sidebarWidth, 0.0f, usableWidth, ofGetHeight());
+	const float sidebarGap = showGui ? 16.0f : 0.0f;
+	const float usableWidth = std::max(1.0f, ofGetWidth() - sidebarWidth - sidebarGap);
+	const ofRectangle bounds(sidebarWidth + sidebarGap, 0.0f, usableWidth, ofGetHeight());
 	ofRectangle fit(0.0f, 0.0f, texW, texH);
 	fit.scaleTo(bounds, OF_SCALEMODE_FIT);
 
-	if (!previewRectInitialized) {
-		previewRect = fit;
-		previewRect.setPosition(
-			bounds.x + (bounds.getWidth() - fit.getWidth()) * 0.5f,
-			bounds.y + (bounds.getHeight() - fit.getHeight()) * 0.5f);
-		previewRectInitialized = true;
-		return;
-	}
-
-	const ofVec2f center = previewRect.getCenter();
-	previewRect.setFromCenter(center, fit.getWidth(), fit.getHeight());
-
-	const float maxX = bounds.x + bounds.getWidth() - previewRect.getWidth();
-	const float maxY = bounds.y + bounds.getHeight() - previewRect.getHeight();
-	previewRect.x = ofClamp(previewRect.x, bounds.x, maxX);
-	previewRect.y = ofClamp(previewRect.y, bounds.y, maxY);
+	previewRect = fit;
+	previewRect.setPosition(
+		bounds.x + (bounds.getWidth() - fit.getWidth()),
+		bounds.y + (bounds.getHeight() - fit.getHeight()) * 0.5f);
+	previewRectInitialized = true;
 }
 
 //--------------------------------------------------------------

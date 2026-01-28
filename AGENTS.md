@@ -71,7 +71,7 @@ You are a senior creative coder / realtime systems engineer specialized in openF
 - NDI status: dropdown background is green when the selected sender is connected, red when selected but unavailable, gray when <none>.
 - NDI resilience: keep desired sender name even if offline; release receiver when unavailable and reconnect when the sender reappears. Do not crash if the source stops.
 - Performance: particles skip trail buffer updates when trail=0 and precompute common draw values per system to reduce per-particle overhead.
-- Performance tests: FOAM updates every 2 frames for performance. Preview draw toggle lives under COLORS as "BETTER FPS". UI lock toggle lives under that ("LOCK UI") and blocks edits; key `K` also toggles it.
+- Performance tests: FOAM updates every 2 frames for performance. Preview draw toggle lives under COLORS as "BETTER FPS". UI lock toggle lives under that ("LOCK UI") and blocks edits; key `K` also toggles it. Key `P` toggles a compact mode (75% window, GUI hidden, preview on).
 - OSC out: send `/presetX` when the transition first hits black (before load); UI lives under COLORS with enable toggle and shows host:port.
 - Sequence bar: between COLORS and OSC OUT. Play/Stop + cycle progress, with sliders for cycle duration and trigger window. On trigger, randomly selects a preset and color.
 
