@@ -74,6 +74,7 @@ You are a senior creative coder / realtime systems engineer specialized in openF
 - Performance tests: FOAM updates every 2 frames for performance. Preview draw toggle lives under COLORS as "BETTER FPS". UI lock toggle lives under that ("LOCK UI") and blocks edits; key `K` also toggles it. Key `P` toggles a compact mode (75% window, GUI hidden, preview on).
 - OSC out: send `/presetX` when the transition first hits black (before load); UI lives under COLORS with enable toggle and shows host:port.
 - Sequence bar: between COLORS and OSC OUT. Play/Stop + cycle progress, with sliders for cycle duration and trigger window. On trigger, randomly selects a preset and color.
+- Preset particle transitions: particle systems store persistent IDs. When loading a preset, shared IDs continue live; missing systems fade out and stop spawning; new or returning systems spawn from zero and fade in.
 
 ## Next Steps
 - Scaffold folders and move `src/` to match the structure above.

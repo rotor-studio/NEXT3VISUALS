@@ -45,6 +45,11 @@ void ofApp::setup(){
 	ndiSender.CreateSender(ndiOutputName.c_str(), outputWidth, outputHeight);
 	oscSender.setup(oscHost, oscPort);
 	loadComposition();
+	const std::string presetPath = getPresetPath(1);
+	if (ofFile::doesFileExist(ofToDataPath(presetPath, true))) {
+		loadComposition(presetPath, false, false);
+		currentPresetIndex = 1;
+	}
 }
 
 //--------------------------------------------------------------
@@ -2849,7 +2854,18 @@ void ofApp::sendOscColor(int colorIndex){
 
 //--------------------------------------------------------------
 void ofApp::triggerCycleEvent(){
-	const int presetIndex = static_cast<int>(ofRandom(1, 6));
+	std::vector<int> availablePresets;
+	availablePresets.reserve(presetRects.size());
+	for (int i = 1; i <= static_cast<int>(presetRects.size()); ++i) {
+		const std::string presetPath = getPresetPath(i);
+		if (ofFile::doesFileExist(ofToDataPath(presetPath, true))) {
+			availablePresets.push_back(i);
+		}
+	}
+	if (availablePresets.empty()) {
+		return;
+	}
+	const int presetIndex = availablePresets[static_cast<int>(ofRandom(availablePresets.size()))];
 	const int colorIndex = static_cast<int>(ofRandom(0, 5));
 
 	startPresetTransition(presetIndex);
