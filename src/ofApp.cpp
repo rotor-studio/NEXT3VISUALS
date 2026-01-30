@@ -3,11 +3,12 @@
 //--------------------------------------------------------------
 void ofApp::setup(){
 	ofSetWindowTitle("ROTOR STUDIO - NN3");
+	ofSetLogLevel("ofPixels", OF_LOG_SILENT);
 
 	ndiReceiver.SetAudio(false);
 	ndiReceiver.SetUpload(false);
 	ndiReceiver.SetLowBandwidth(false);
-	ndiReceiver.SetFormat(NDIlib_recv_color_format_BGRX_BGRA);
+	ndiReceiver.SetFormat(NDIlib_recv_color_format_RGBX_RGBA);
 	ndiReceiver.CreateFinder();
 
 	ndiTexture.allocate(2, 2, GL_RGBA);
@@ -63,26 +64,38 @@ void ofApp::update(){
 	}
 
 	if (ndiReceiver.ReceiverCreated()) {
-		ndiReceiver.ReceiveImage(ndiTexture);
 		const bool needsMask = particleGroupEnabled && !particleSystems.empty();
-		if (ndiEnabled && ndiReceiver.ReceiverConnected() && ndiTexture.isAllocated() && needsMask) {
-			if (lastMaskCaptureTime < 0.0f || (now - lastMaskCaptureTime) >= maskCaptureInterval) {
-				ofPixels tempPixels;
-				ndiTexture.readToPixels(tempPixels);
-				if (tempPixels.isAllocated() && tempPixels.getNumChannels() >= 3) {
-					if (ndiPixels.isAllocated()) {
-						ndiPixelsPrev = ndiPixels;
-					}
-					ndiPixels = tempPixels;
-					if (!ndiPixelsPrev.isAllocated()) {
-						ndiPixelsPrev = ndiPixels;
-					}
-					maskPixelsReady = true;
-				} else {
-					maskPixelsReady = false;
-				}
-				lastMaskCaptureTime = now;
+		if (needsMask) {
+			if (!ndiPixelsScratch.isAllocated()) {
+				ndiPixelsScratch.allocate(2, 2, OF_PIXELS_RGBA);
 			}
+			if (ndiReceiver.ReceiveImage(ndiPixelsScratch)) {
+				if (!ndiTexture.isAllocated() ||
+					ndiTexture.getWidth() != ndiPixelsScratch.getWidth() ||
+					ndiTexture.getHeight() != ndiPixelsScratch.getHeight()) {
+					ndiTexture.allocate(ndiPixelsScratch.getWidth(), ndiPixelsScratch.getHeight(), GL_RGBA);
+				}
+				ndiTexture.loadData(ndiPixelsScratch);
+				if (ndiEnabled && ndiReceiver.ReceiverConnected()) {
+					if (lastMaskCaptureTime < 0.0f || (now - lastMaskCaptureTime) >= maskCaptureInterval) {
+						if (ndiPixelsScratch.getNumChannels() >= 3) {
+							if (ndiPixels.isAllocated()) {
+								ndiPixelsPrev = ndiPixels;
+							}
+							ndiPixels = ndiPixelsScratch;
+							if (!ndiPixelsPrev.isAllocated()) {
+								ndiPixelsPrev = ndiPixels;
+							}
+							maskPixelsReady = true;
+						} else {
+							maskPixelsReady = false;
+						}
+						lastMaskCaptureTime = now;
+					}
+				}
+			}
+		} else {
+			ndiReceiver.ReceiveImage(ndiTexture);
 		}
 	}
 

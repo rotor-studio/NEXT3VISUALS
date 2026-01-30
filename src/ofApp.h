@@ -77,6 +77,7 @@ private:
 	ofTexture ndiTexture;
 	ofPixels ndiPixels;
 	ofPixels ndiPixelsPrev;
+	ofPixels ndiPixelsScratch;
 	bool ndiEnabled = true;
 	float ndiFade = 1.0f;
 	float maskCaptureInterval = 1.0f / 15.0f;
