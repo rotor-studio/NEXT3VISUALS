@@ -195,6 +195,7 @@ private:
 	};
 
 	struct ParticleSystem {
+		int id = 0;
 		ofRectangle emitterRect;
 		std::vector<Particle> particles;
 		float spawnRate = 25.0f;
@@ -212,6 +213,11 @@ private:
 		bool enabled = true;
 		bool locked = false;
 		int trailColorIndex = 0;
+		bool fadingOut = false;
+		bool suppressSpawn = false;
+		float fadeOut = 1.0f;
+		bool fadingIn = false;
+		float fadeIn = 1.0f;
 	};
 
 	std::vector<ParticleSystem> particleSystems;
@@ -253,6 +259,7 @@ private:
 	bool draggingCycleDuration = false;
 	bool draggingCycleWindow = false;
 	int currentColorIndex = 0;
+	int nextParticleSystemId = 1;
 
 	enum class LayerSelection {
 		None,

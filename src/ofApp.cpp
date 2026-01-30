@@ -1,4 +1,5 @@
 #include "ofApp.h"
+#include <unordered_map>
 
 //--------------------------------------------------------------
 void ofApp::setup(){
@@ -1712,6 +1713,7 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 //--------------------------------------------------------------
 void ofApp::createParticleSystem(){
 	ParticleSystem system;
+	system.id = nextParticleSystemId++;
 	system.emitterRect = ofRectangle(outputWidth * 0.25f, 0.0f, outputWidth * 0.5f, 60.0f);
 	system.spawnRate = 30.0f;
 	system.size = 3.0f;
@@ -1791,7 +1793,23 @@ void ofApp::updateParticles(float dt){
 		if (!system.enabled) {
 			continue;
 		}
-		if (particleSpawnEnabled) {
+		if (system.fadingOut) {
+			const float fadeSpeed = 1.0f / std::max(0.5f, presetTransitionDuration);
+			system.fadeOut = std::max(0.0f, system.fadeOut - dt * fadeSpeed);
+		} else {
+			system.fadeOut = 1.0f;
+		}
+		if (system.fadingIn) {
+			const float fadeSpeed = 1.0f / std::max(0.5f, presetTransitionDuration);
+			system.fadeIn = std::min(1.0f, system.fadeIn + dt * fadeSpeed);
+			if (system.fadeIn >= 1.0f) {
+				system.fadingIn = false;
+			}
+		} else {
+			system.fadeIn = 1.0f;
+		}
+		const bool allowSpawn = particleSpawnEnabled && !system.suppressSpawn;
+		if (allowSpawn) {
 			system.spawnAccumulator += system.spawnRate * dt;
 		} else {
 			system.spawnAccumulator = 0.0f;
@@ -1799,7 +1817,7 @@ void ofApp::updateParticles(float dt){
 		if (system.spawnAccumulator > system.maxParticles) {
 			system.spawnAccumulator = system.maxParticles;
 		}
-		if (particleSpawnEnabled) {
+		if (allowSpawn) {
 			const int spawnCount = static_cast<int>(system.spawnAccumulator);
 			const size_t maxParticles = static_cast<size_t>(system.maxParticles);
 			const size_t available = (system.particles.size() < maxParticles)
@@ -1972,11 +1990,20 @@ void ofApp::updateParticles(float dt){
 			}
 		}
 
-		if (!particleSpawnEnabled) {
+		if (system.fadingOut && system.fadeOut <= 0.0f && system.particles.empty()) {
+			system.enabled = false;
+			continue;
+		}
+		if (!allowSpawn) {
 			system.particles.erase(std::remove_if(system.particles.begin(), system.particles.end(),
 				[](const Particle &p) { return p.age > p.lifespan; }), system.particles.end());
 		}
 	}
+
+	particleSystems.erase(
+		std::remove_if(particleSystems.begin(), particleSystems.end(),
+			[](const ParticleSystem &system) { return system.fadingOut && system.fadeOut <= 0.0f && system.particles.empty(); }),
+		particleSystems.end());
 }
 
 //--------------------------------------------------------------
@@ -2007,7 +2034,7 @@ void ofApp::drawParticles(){
 		if (!system.enabled) {
 			continue;
 		}
-		const float alpha = ofClamp(system.fade, 0.0f, 1.0f) * 255.0f;
+		const float alpha = ofClamp(system.fade, 0.0f, 1.0f) * 255.0f * system.fadeOut * system.fadeIn;
 		const float trailAlpha = alpha;
 		const bool trailEnabled = system.trail > 0.0f;
 		const int maxCount = Particle::kTrailPoints;
@@ -2142,7 +2169,7 @@ void ofApp::startPresetTransition(int presetIndex){
 	presetTransitionPhase = 0.0f;
 	presetTransitionLoaded = false;
 	presetTransitionOscSent = false;
-	pendingKeepParticles = !particleSystems.empty();
+	pendingKeepParticles = false;
 }
 
 //--------------------------------------------------------------
@@ -2293,6 +2320,7 @@ void ofApp::saveComposition(const std::string &path, bool includeGlobals){
 	ofJson particleArray = ofJson::array();
 	for (const auto &system : particleSystems) {
 		particleArray.push_back({
+			{"id", system.id},
 			{"emitter", {
 				{"x", system.emitterRect.x},
 				{"y", system.emitterRect.y},
@@ -2402,61 +2430,156 @@ void ofApp::loadComposition(const std::string &path, bool keepParticles, bool ap
 
 	if (!keepParticles) {
 	particleGroupEnabled = data.value("particlesEnabled", true);
-		particleSystems.clear();
-		if (data.contains("particles")) {
-			for (const auto &item : data["particles"]) {
-				ParticleSystem system;
-				if (item.contains("emitter")) {
-					system.emitterRect.set(
-						item["emitter"].value("x", outputWidth * 0.25f),
-						item["emitter"].value("y", 0.0f),
-						item["emitter"].value("w", outputWidth * 0.5f),
-						item["emitter"].value("h", 60.0f));
-				} else {
-					system.emitterRect = ofRectangle(outputWidth * 0.25f, 0.0f, outputWidth * 0.5f, 60.0f);
-				}
-				system.size = item.value("size", 3.0f);
-				system.speed = item.value("speed", 220.0f);
-				system.bounce = item.value("bounce", 0.5f);
-				system.maxParticles = item.value("maxParticles", 360.0f);
-				system.lifeSpanMin = item.value("lifeSpanMin", 2.0f);
-				system.lifeSpanMax = item.value("lifeSpanMax", 8.0f);
-				system.trail = item.value("trail", 0.0f);
-				system.fade = item.value("fade", 1.0f);
-				system.noise = item.value("noise", 0.0f);
-				system.noiseStart = item.value("noiseStart", 0.5f);
-				system.enabled = item.value("enabled", true);
+		auto parseSystem = [&](const ofJson &item, bool prefill) {
+			ParticleSystem system;
+			system.id = item.value("id", nextParticleSystemId++);
+			if (item.contains("emitter")) {
+				system.emitterRect.set(
+					item["emitter"].value("x", outputWidth * 0.25f),
+					item["emitter"].value("y", 0.0f),
+					item["emitter"].value("w", outputWidth * 0.5f),
+					item["emitter"].value("h", 60.0f));
+			} else {
+				system.emitterRect = ofRectangle(outputWidth * 0.25f, 0.0f, outputWidth * 0.5f, 60.0f);
+			}
+			system.size = item.value("size", 3.0f);
+			system.speed = item.value("speed", 220.0f);
+			system.bounce = item.value("bounce", 0.5f);
+			system.maxParticles = item.value("maxParticles", 360.0f);
+			system.lifeSpanMin = item.value("lifeSpanMin", 2.0f);
+			system.lifeSpanMax = item.value("lifeSpanMax", 8.0f);
+			system.trail = item.value("trail", 0.0f);
+			system.fade = item.value("fade", 1.0f);
+			system.noise = item.value("noise", 0.0f);
+			system.noiseStart = item.value("noiseStart", 0.5f);
+			system.enabled = item.value("enabled", true);
 			system.locked = item.value("locked", false);
-				system.spawnRate = ofMap(system.maxParticles, 240.0f, 1500.0f, 80.0f, 800.0f, true);
-				system.spawnAccumulator = 0.0f;
-				system.particles.clear();
-			const int prefill = particleSpawnEnabled
-				? static_cast<int>(std::min<double>(150.0, system.maxParticles * 0.3f))
-				: 0;
-			for (int i = 0; i < prefill; ++i) {
-				Particle particle;
+			system.trailColorIndex = item.value("trailColorIndex", currentColorIndex);
+			system.spawnRate = ofMap(system.maxParticles, 240.0f, 1500.0f, 80.0f, 800.0f, true);
+			system.spawnAccumulator = 0.0f;
+			system.particles.clear();
+			system.fadingOut = false;
+			system.suppressSpawn = false;
+			system.fadeOut = 1.0f;
+			system.fadingIn = false;
+			system.fadeIn = 1.0f;
+			if (prefill) {
+				const int prefillCount = particleSpawnEnabled
+					? static_cast<int>(std::min<double>(150.0, system.maxParticles * 0.3f))
+					: 0;
+				for (int i = 0; i < prefillCount; ++i) {
+					Particle particle;
 					particle.position.set(
 						ofRandom(system.emitterRect.getMinX(), system.emitterRect.getMaxX()),
 						ofRandom(system.emitterRect.getMinY(), static_cast<float>(outputHeight)));
-				particle.velocity.set(ofRandom(-20.0f, 20.0f), system.speed);
-				particle.prevPos = particle.position;
-				particle.trailPos = particle.position;
-				particle.prevTrailPos = particle.position;
-				particle.trailDelta.set(0.0f, 0.0f);
-				particle.trailHead = 0;
-				particle.trailCount = 1;
-				particle.trail[0] = particle.position;
-				particle.trailColorIndex = system.trailColorIndex;
-				particle.age = 0.0f;
-				const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
+					particle.velocity.set(ofRandom(-20.0f, 20.0f), system.speed);
+					particle.prevPos = particle.position;
+					particle.trailPos = particle.position;
+					particle.prevTrailPos = particle.position;
+					particle.trailDelta.set(0.0f, 0.0f);
+					particle.trailHead = 0;
+					particle.trailCount = 1;
+					particle.trail[0] = particle.position;
+					particle.trailColorIndex = system.trailColorIndex;
+					particle.age = 0.0f;
+					const float baseLife = ofRandom(system.lifeSpanMin, system.lifeSpanMax);
 					const float travelLife = (outputHeight / std::max(system.speed, 10.0f)) * 2.5f;
 					particle.lifespan = travelLife + baseLife;
 					particle.noiseSeed = ofRandom(1000.0f);
-			system.particles.push_back(particle);
+					system.particles.push_back(particle);
+				}
 			}
-			particleSystems.push_back(system);
+			return system;
+		};
+
+		if (applyGlobals) {
+			particleSystems.clear();
+			int maxId = 0;
+			if (data.contains("particles")) {
+				for (const auto &item : data["particles"]) {
+					ParticleSystem system = parseSystem(item, true);
+					maxId = std::max(maxId, system.id);
+					particleSystems.push_back(system);
+				}
+			}
+			nextParticleSystemId = std::max(nextParticleSystemId, maxId + 1);
+		} else {
+			std::vector<ParticleSystem> loadedSystems;
+			int maxId = 0;
+			if (data.contains("particles")) {
+				for (const auto &item : data["particles"]) {
+					ParticleSystem system = parseSystem(item, false);
+					maxId = std::max(maxId, system.id);
+					loadedSystems.push_back(system);
+				}
+			}
+			nextParticleSystemId = std::max(nextParticleSystemId, maxId + 1);
+
+			std::unordered_map<int, size_t> currentIndex;
+			currentIndex.reserve(particleSystems.size());
+			for (size_t i = 0; i < particleSystems.size(); ++i) {
+				currentIndex[particleSystems[i].id] = i;
+			}
+
+			std::vector<bool> usedCurrent(particleSystems.size(), false);
+			std::vector<ParticleSystem> merged;
+			merged.reserve(loadedSystems.size() + particleSystems.size());
+
+			for (auto &loaded : loadedSystems) {
+				auto it = currentIndex.find(loaded.id);
+				if (it != currentIndex.end()) {
+					ParticleSystem existing = particleSystems[it->second];
+					usedCurrent[it->second] = true;
+					existing.emitterRect = loaded.emitterRect;
+					existing.size = loaded.size;
+					existing.speed = loaded.speed;
+					existing.bounce = loaded.bounce;
+					existing.maxParticles = loaded.maxParticles;
+					existing.lifeSpanMin = loaded.lifeSpanMin;
+					existing.lifeSpanMax = loaded.lifeSpanMax;
+					existing.trail = loaded.trail;
+					existing.fade = loaded.fade;
+					existing.noise = loaded.noise;
+					existing.noiseStart = loaded.noiseStart;
+					existing.enabled = loaded.enabled;
+					existing.locked = loaded.locked;
+					existing.trailColorIndex = loaded.trailColorIndex;
+					existing.spawnRate = loaded.spawnRate;
+					const bool wasFadingOut = existing.fadingOut || existing.suppressSpawn;
+					existing.fadingOut = false;
+					existing.suppressSpawn = false;
+					existing.fadeOut = 1.0f;
+					if (wasFadingOut) {
+						existing.particles.clear();
+						existing.spawnAccumulator = 0.0f;
+						existing.fadingIn = true;
+						existing.fadeIn = 0.0f;
+					} else {
+						existing.fadingIn = false;
+						existing.fadeIn = 1.0f;
+					}
+					merged.push_back(existing);
+				} else {
+					loaded.fadingIn = true;
+					loaded.fadeIn = 0.0f;
+					merged.push_back(loaded);
+				}
+			}
+
+			for (size_t i = 0; i < particleSystems.size(); ++i) {
+				if (usedCurrent[i]) {
+					continue;
+				}
+				ParticleSystem fading = particleSystems[i];
+				fading.fadingOut = true;
+				fading.suppressSpawn = true;
+				fading.fadingIn = false;
+				merged.push_back(fading);
+			}
+
+			particleSystems.swap(merged);
 		}
-	}
+
 		selectedParticleIndex = particleSystems.empty() ? -1 : 0;
 		if (!particleSystems.empty()) {
 			currentColorIndex = particleSystems[0].trailColorIndex;
