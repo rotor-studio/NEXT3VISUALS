@@ -52,6 +52,7 @@ private:
 	void sendOscPreset(int presetIndex);
 	void sendOscColor(int colorIndex);
 	void triggerCycleEvent();
+	void sendOscCue(int cueIndex);
 	void saveComposition();
 	void loadComposition();
 	void saveComposition(const std::string &path);
@@ -260,6 +261,10 @@ private:
 	bool draggingCycleWindow = false;
 	int currentColorIndex = 0;
 	int nextParticleSystemId = 1;
+	bool cuePending = false;
+	float cueSendTime = 0.0f;
+	int cuePendingIndex = 0;
+	std::string lastOscMessage;
 
 	enum class LayerSelection {
 		None,

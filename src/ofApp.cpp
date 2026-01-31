@@ -111,6 +111,11 @@ void ofApp::update(){
 	updateFoamLayers();
 	updateParticles(dt);
 
+	if (cuePending && ofGetElapsedTimef() >= cueSendTime) {
+		sendOscCue(cuePendingIndex);
+		cuePending = false;
+	}
+
 	if (cyclePlaying && cycleDuration > 0.0f) {
 		cyclePhasePrev = cyclePhase;
 		cyclePhase += dt / cycleDuration;
@@ -1628,7 +1633,12 @@ ofDrawBitmapString("-", deleteParticleRect.getCenter().x - 3.0f, deleteParticleR
 		oscEnableRect.x + oscEnableRect.width + 8.0f,
 		oscEnableRect.y + oscEnableRect.height - 6.0f);
 
-	const float betterFpsTitleY = oscEnableRect.y + oscEnableRect.height + 34.0f;
+	const float oscMsgY = oscEnableRect.y + oscEnableRect.height + 12.0f;
+	ofSetColor(160);
+	ofDrawBitmapString("LAST " + (lastOscMessage.empty() ? "-" : lastOscMessage),
+		controlsX, oscMsgY + 10.0f);
+
+	const float betterFpsTitleY = oscMsgY + 34.0f;
 	ofSetColor(200);
 	ofDrawBitmapString("BETTER FPS", controlsX, betterFpsTitleY);
 	const float betterFpsRowY = betterFpsTitleY + 12.0f;
@@ -2840,6 +2850,7 @@ void ofApp::sendOscPreset(int presetIndex){
 	ofxOscMessage msg;
 	msg.setAddress("/preset" + ofToString(presetIndex));
 	oscSender.sendMessage(msg, false);
+	lastOscMessage = msg.getAddress();
 }
 
 //--------------------------------------------------------------
@@ -2850,6 +2861,21 @@ void ofApp::sendOscColor(int colorIndex){
 	ofxOscMessage msg;
 	msg.setAddress("/color" + ofToString(colorIndex));
 	oscSender.sendMessage(msg, false);
+	lastOscMessage = msg.getAddress();
+}
+
+//--------------------------------------------------------------
+void ofApp::sendOscCue(int cueIndex){
+	if (!oscEnabled) {
+		return;
+	}
+	if (cueIndex <= 0) {
+		return;
+	}
+	ofxOscMessage msg;
+	msg.setAddress("/cue" + ofToString(cueIndex));
+	oscSender.sendMessage(msg, false);
+	lastOscMessage = msg.getAddress();
 }
 
 //--------------------------------------------------------------
@@ -2867,6 +2893,14 @@ void ofApp::triggerCycleEvent(){
 	}
 	const int presetIndex = availablePresets[static_cast<int>(ofRandom(availablePresets.size()))];
 	const int colorIndex = static_cast<int>(ofRandom(0, 5));
+	const int cueIndex = static_cast<int>(ofRandom(1, 21));
+
+	const float holdDuration = std::max(0.0f, presetTransitionDuration * presetTransitionHoldRatio);
+	const float fadeDuration = std::max(0.001f, (presetTransitionDuration - holdDuration) * 0.5f);
+	const float cueDelay = std::max(0.0f, fadeDuration - 5.0f);
+	cuePending = true;
+	cuePendingIndex = cueIndex;
+	cueSendTime = ofGetElapsedTimef() + cueDelay;
 
 	startPresetTransition(presetIndex);
 
