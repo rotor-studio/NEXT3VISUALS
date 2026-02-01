@@ -75,6 +75,9 @@ You are a senior creative coder / realtime systems engineer specialized in openF
 - OSC out: send `/presetX` when the transition first hits black (before load); UI lives under COLORS with enable toggle and shows host:port.
 - Sequence bar: between COLORS and OSC OUT. Play/Stop + cycle progress, with sliders for cycle duration and trigger window. On trigger, randomly selects a preset and color.
 - Preset particle transitions: particle systems store persistent IDs. When loading a preset, shared IDs continue live; missing systems fade out and stop spawning; new or returning systems spawn from zero and fade in.
+- Sequence OSC: sends `/cueN` (1-20) five seconds before `/presetN` when a sequence-triggered preset change is scheduled. The last OSC address is shown under OSC OUT as `LAST /...`.
+- Startup behavior: if preset 1 exists, it loads on launch and becomes the active preset; sequence only picks presets that have a saved file.
+- Compact mode: key `P` toggles compact view (GUI hidden, window resized to output aspect at 75% height, preview only). In compact mode the progress bar appears near the FPS and the UI is non-interactive.
 
 ## Next Steps
 - Scaffold folders and move `src/` to match the structure above.
